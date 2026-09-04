@@ -62,7 +62,7 @@ async def test_first_refresh_discovers_devices_and_capabilities(coordinator, fak
     coordinator._bp_client.devices = {
         0: fake_device("Lovense Hush", outputs={bp.VIBRATE}, battery=0.9),
     }
-    await coordinator.async_config_entry_first_refresh()
+    await coordinator.async_request_refresh()
 
     assert "lovense_hush" in coordinator.data
     assert coordinator.data["lovense_hush"]["capabilities"] == ["vibrate", "battery"]
@@ -71,7 +71,7 @@ async def test_first_refresh_discovers_devices_and_capabilities(coordinator, fak
 
 @pytest.mark.asyncio
 async def test_new_device_listener_fires_for_devices_added_later(coordinator, fake_device) -> None:
-    await coordinator.async_config_entry_first_refresh()
+    await coordinator.async_request_refresh()
 
     seen: list = []
     coordinator.add_new_device_listener(lambda batch: seen.append(batch))
@@ -86,7 +86,7 @@ async def test_new_device_listener_fires_for_devices_added_later(coordinator, fa
 @pytest.mark.asyncio
 async def test_offline_device_disappears_from_data_but_isnt_an_error(coordinator, fake_device) -> None:
     coordinator._bp_client.devices = {0: fake_device("Lovense Hush", outputs={bp.VIBRATE})}
-    await coordinator.async_config_entry_first_refresh()
+    await coordinator.async_request_refresh()
     assert "lovense_hush" in coordinator.data
 
     coordinator._bp_client.devices = {}
@@ -99,7 +99,7 @@ async def test_offline_device_disappears_from_data_but_isnt_an_error(coordinator
 
 @pytest.mark.asyncio
 async def test_apply_intensity_on_offline_device_returns_false_not_error(coordinator) -> None:
-    await coordinator.async_config_entry_first_refresh()
+    await coordinator.async_request_refresh()
     ok = await coordinator.async_apply_intensity("does_not_exist", 50)
     assert ok is False
 
@@ -110,7 +110,7 @@ async def test_emergency_stop_blocks_further_commands(coordinator, fake_device) 
     to only perform a one-off stop, without blocking anything sent
     afterwards. This is the regression test for that fix."""
     coordinator._bp_client.devices = {0: fake_device("Lovense Hush", outputs={bp.VIBRATE})}
-    await coordinator.async_config_entry_first_refresh()
+    await coordinator.async_request_refresh()
 
     await coordinator.async_stop_all()
     assert coordinator.stopped is True
@@ -128,7 +128,7 @@ async def test_emergency_stop_blocks_further_commands(coordinator, fake_device) 
 @pytest.mark.asyncio
 async def test_stop_all_notifies_stop_listeners(coordinator, fake_device) -> None:
     coordinator._bp_client.devices = {0: fake_device("Lovense Hush", outputs={bp.VIBRATE})}
-    await coordinator.async_config_entry_first_refresh()
+    await coordinator.async_request_refresh()
 
     calls = []
     coordinator.add_stop_listener(lambda: calls.append(True))
@@ -148,7 +148,7 @@ async def test_pattern_cancellation_completes_before_next_command_is_sent(coordi
     sent, with nothing arriving after it."""
     dev = fake_device("Lovense Hush", outputs={bp.VIBRATE})
     coordinator._bp_client.devices = {0: dev}
-    await coordinator.async_config_entry_first_refresh()
+    await coordinator.async_request_refresh()
 
     await coordinator.async_start_pattern("lovense_hush", "wave", duration=10, max_speed_percent=90)
     await asyncio.sleep(0.3)
@@ -165,7 +165,7 @@ async def test_pattern_cancellation_completes_before_next_command_is_sent(coordi
 async def test_pattern_start_and_stop(coordinator, fake_device) -> None:
     dev = fake_device("Lovense Hush", outputs={bp.VIBRATE})
     coordinator._bp_client.devices = {0: dev}
-    await coordinator.async_config_entry_first_refresh()
+    await coordinator.async_request_refresh()
 
     await coordinator.async_start_pattern("lovense_hush", "wave", duration=1, max_speed_percent=80)
     await asyncio.sleep(1.3)
