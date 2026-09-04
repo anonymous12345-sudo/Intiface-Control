@@ -37,7 +37,7 @@ def _patch_device_output_command(monkeypatch):
     """Every test that constructs a DeviceOutputCommand goes through
     client.py's own reference to it, so patching it there is enough —
     other modules never import DeviceOutputCommand directly."""
-    from custom_components.buttplug import client as bp_client
+    from custom_components.intiface_control import client as bp_client
 
     monkeypatch.setattr(bp_client, "DeviceOutputCommand", FakeDeviceOutputCommand)
 
@@ -62,7 +62,7 @@ class FakeDevice:
         return output_type in self._outputs
 
     def has_input(self, input_type) -> bool:
-        from custom_components.buttplug import client as bp_client
+        from custom_components.intiface_control import client as bp_client
 
         return input_type == bp_client.BATTERY_INPUT and self._battery is not None
 

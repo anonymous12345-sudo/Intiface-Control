@@ -31,7 +31,7 @@ async def _test_connection(url: str) -> None:
         await client.disconnect()
 
 
-class ButtplugConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+class IntifaceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Intiface Control."""
 
     VERSION = 1
@@ -62,11 +62,11 @@ class ButtplugConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry: ConfigEntry) -> ButtplugOptionsFlow:
-        return ButtplugOptionsFlow()
+    def async_get_options_flow(config_entry: ConfigEntry) -> IntifaceOptionsFlow:
+        return IntifaceOptionsFlow()
 
 
-class ButtplugOptionsFlow(config_entries.OptionsFlow):
+class IntifaceOptionsFlow(config_entries.OptionsFlow):
     """Lets the user change the Intiface URL (or fallback URL) after
     initial setup, without removing and re-adding the integration —
     which would otherwise lose entity customizations, dashboard

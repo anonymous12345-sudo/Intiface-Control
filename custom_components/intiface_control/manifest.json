@@ -1,5 +1,5 @@
 {
-  "domain": "buttplug",
+  "domain": "intiface_control",
   "name": "Intiface Control",
   "codeowners": ["@anonymous12345-sudo"],
   "config_flow": true,
@@ -8,5 +8,5 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/anonymous12345-sudo/intiface-control/issues",
   "requirements": ["buttplug"],
-  "version": "0.1.4"
+  "version": "0.2.0"
 }

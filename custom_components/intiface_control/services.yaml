@@ -1,0 +1,108 @@
+start_wave_pattern:
+  name: Start wave pattern
+  description: >-
+    Runs a single wave (min_speed -> max_speed -> min_speed) on the
+    targeted toy/toys, optionally repeated.
+  target:
+    device:
+      integration: intiface_control
+  fields:
+    repeat:
+      name: Repeat
+      description: How many times to repeat the single wave cycle.
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 100
+    min_speed:
+      name: Min speed
+      description: The wave's trough — its speed at the start and end of the cycle.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+    max_speed:
+      name: Max speed
+      description: The wave's peak — its speed at the midpoint of the cycle.
+      default: 50
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+    duration:
+      name: Duration
+      description: How long one single wave (min → max → min) takes, in seconds.
+      default: 3
+      selector:
+        number:
+          min: 0.2
+          max: 60
+          step: 0.1
+          unit_of_measurement: seconds
+
+start_pulse_pattern:
+  name: Start pulse pattern
+  description: >-
+    Runs a single pulse (a low phase followed by a high phase) on the
+    targeted toy/toys, optionally repeated.
+  target:
+    device:
+      integration: intiface_control
+  fields:
+    repeat:
+      name: Repeat
+      description: How many times to repeat the single pulse cycle.
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 100
+    low_speed:
+      name: Low speed
+      description: Speed during the low phase.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+    high_speed:
+      name: High speed
+      description: Speed during the high phase.
+      default: 80
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+    low_duration:
+      name: Low duration
+      description: How long the low phase lasts, in seconds.
+      default: 2
+      selector:
+        number:
+          min: 0.2
+          max: 60
+          step: 0.1
+          unit_of_measurement: seconds
+    high_duration:
+      name: High duration
+      description: How long the high phase lasts, in seconds.
+      default: 2
+      selector:
+        number:
+          min: 0.2
+          max: 60
+          step: 0.1
+          unit_of_measurement: seconds
+
+stop_pattern:
+  name: Stop pattern
+  description: Stops any running pattern on the targeted toy/toys.
+  target:
+    device:
+      integration: intiface_control

@@ -8,11 +8,13 @@ switch.stop_all_toys) — not guessed.
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.buttplug import client as bp
-from custom_components.buttplug.const import CONF_FALLBACK_URL, CONF_URL, DOMAIN
+from custom_components.intiface_control import client as bp
+from custom_components.intiface_control.const import CONF_FALLBACK_URL, CONF_URL, DOMAIN
 
 
 class FakeButtplugClient:
@@ -210,3 +212,36 @@ async def test_disabling_one_device_does_not_affect_another(hass, setup_entry, f
         blocking=True,
     )
     assert hush.sent[-1] == (bp.VIBRATE, (0.3,))
+
+
+@pytest.mark.asyncio
+async def test_wave_pattern_service_via_real_device_registry(hass, setup_entry, fake_device) -> None:
+    """End-to-end confirmation of the device-target mechanism (not just
+    the coordinator-level tests in test_coordinator.py): looks the real
+    device_id up from Home Assistant's own device registry — the same
+    way the frontend's device picker would supply it — and calls the
+    service exactly as a user/automation would, with no direct
+    coordinator access at all."""
+    from homeassistant.helpers import device_registry as dr
+
+    coordinator = hass.data[DOMAIN][setup_entry.entry_id]
+    hush = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    coordinator._bp_client.devices = {0: hush}
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    registry = dr.async_get(hass)
+    device_entry = registry.async_get_device(identifiers={(DOMAIN, f"{setup_entry.entry_id}_lovense_hush")})
+    assert device_entry is not None, "the device registry should already have this toy's device"
+
+    await hass.services.async_call(
+        DOMAIN, "start_wave_pattern",
+        {"device_id": [device_entry.id], "repeat": 1, "min_speed": 10, "max_speed": 90, "duration": 1},
+        blocking=True,
+    )
+    await asyncio.sleep(1.3)
+
+    speeds = [v[0] for _, v in hush.sent[:-1]]
+    assert speeds[0] == pytest.approx(0.1, abs=0.01)
+    assert max(speeds) > 0.85
+    assert hush.sent[-1] == ("STOP", None)

@@ -6,6 +6,57 @@ All notable changes to this project are documented here, per release.
 
 - Nothing yet.
 
+## [0.2.0]
+
+### Changed — breaking changes
+
+- **Domain renamed from `buttplug` to `intiface_control`**, matching
+  the integration's display name everywhere, not just in the UI. This
+  requires removing and re-adding the integration — Home Assistant
+  identifies an installed integration by its domain, so there's no
+  in-place migration path. You'll need to delete the old entities and
+  update any dashboards/automations that reference them. Internal
+  Python class names (`ButtplugCoordinator` → `IntifaceCoordinator`,
+  etc.) were renamed to match; `manufacturer="Buttplug.io"` on each
+  device was deliberately left as-is, since it refers to the underlying
+  open-source protocol, not this integration's own name.
+- **`buttplug.start_pattern` split into two services**:
+  `intiface_control.start_wave_pattern` and
+  `intiface_control.start_pulse_pattern`. Each now only exposes the
+  fields relevant to its own pattern, instead of a shared schema with
+  half the fields silently ignored depending on which pattern you
+  picked.
+- **Pattern services now target Home Assistant devices, not a typed
+  slug string.** `target: lovense_hush` / `target: all` are gone;
+  `intiface_control.start_wave_pattern`,
+  `intiface_control.start_pulse_pattern`, and
+  `intiface_control.stop_pattern` all use Home Assistant's own device
+  selector instead, supporting multi-select natively. A toy disabled
+  via its own Enabled switch now simply refuses to start a pattern,
+  rather than being silently excluded from a running `all` pattern —
+  there's no more `all`/`both` concept to be excluded from.
+
+## [0.1.4]
+
+### Added
+
+- **Options flow**: change the Intiface WebSocket URL after initial
+  setup via **Settings → Devices & services → Intiface Control →
+  Configure**, without removing and re-adding the integration. The
+  connection is tested the same way as during initial setup, and the
+  integration reloads automatically once saved — no more losing entity
+  customizations, dashboard references, or area assignments just to
+  point at a new URL.
+- `CHANGELOG.md`, tracking notable changes per release going forward
+  (backfilled for 0.1.0–0.1.3 too).
+
+### Removed
+
+- The CI job validating against official HACS default-repository
+  listing criteria. This project is staying a custom-repository
+  integration for now, so that job was permanently-red noise rather
+  than useful signal — removed rather than left "for later".
+
 ## [0.1.3]
 
 ### Changed — breaking change to `buttplug.start_pattern`

@@ -49,61 +49,57 @@
     }
   },
   "services": {
-    "start_pattern": {
-      "name": "Start pattern",
-      "description": "Runs a single wave or pulse cycle, optionally repeated. Wave-only fields are ignored for a pulse pattern and vice versa.",
+    "start_wave_pattern": {
+      "name": "Start wave pattern",
+      "description": "Runs a single wave (min_speed \u2192 max_speed \u2192 min_speed) on the targeted toy/toys, optionally repeated.",
       "fields": {
-        "target": {
-          "name": "Target",
-          "description": "Device slug (e.g. lovense_hush), or \"all\" for every connected toy."
-        },
-        "pattern": {
-          "name": "Pattern",
-          "description": "Which pattern to run."
-        },
         "repeat": {
           "name": "Repeat",
-          "description": "How many times to repeat the single wave/pulse cycle."
+          "description": "How many times to repeat the single wave cycle."
         },
         "min_speed": {
-          "name": "Min speed (wave)",
-          "description": "The wave's trough — its speed at the start and end of each cycle."
+          "name": "Min speed",
+          "description": "The wave's trough — its speed at the start and end of the cycle."
         },
         "max_speed": {
-          "name": "Max speed (wave)",
-          "description": "The wave's peak — its speed at the midpoint of each cycle."
+          "name": "Max speed",
+          "description": "The wave's peak — its speed at the midpoint of the cycle."
         },
         "duration": {
-          "name": "Duration (wave)",
+          "name": "Duration",
           "description": "How long one single wave (min \u2192 max \u2192 min) takes, in seconds."
+        }
+      }
+    },
+    "start_pulse_pattern": {
+      "name": "Start pulse pattern",
+      "description": "Runs a single pulse (a low phase followed by a high phase) on the targeted toy/toys, optionally repeated.",
+      "fields": {
+        "repeat": {
+          "name": "Repeat",
+          "description": "How many times to repeat the single pulse cycle."
         },
         "low_speed": {
-          "name": "Low speed (pulse)",
-          "description": "Speed during the low phase of each pulse cycle."
+          "name": "Low speed",
+          "description": "Speed during the low phase."
         },
         "high_speed": {
-          "name": "High speed (pulse)",
-          "description": "Speed during the high phase of each pulse cycle."
+          "name": "High speed",
+          "description": "Speed during the high phase."
         },
         "low_duration": {
-          "name": "Low duration (pulse)",
+          "name": "Low duration",
           "description": "How long the low phase lasts, in seconds."
         },
         "high_duration": {
-          "name": "High duration (pulse)",
+          "name": "High duration",
           "description": "How long the high phase lasts, in seconds."
         }
       }
     },
     "stop_pattern": {
       "name": "Stop pattern",
-      "description": "Stops any running pattern for the given target.",
-      "fields": {
-        "target": {
-          "name": "Target",
-          "description": "Device slug, or \"all\" for every connected toy."
-        }
-      }
+      "description": "Stops any running pattern on the targeted toy/toys."
     }
   }
 }

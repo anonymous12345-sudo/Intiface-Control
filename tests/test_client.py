@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from custom_components.buttplug import client as bp
+from custom_components.intiface_control import client as bp
 
 
 def test_enum_resolution_finds_every_known_output_type() -> None:

@@ -1,6 +1,6 @@
 """Constants for the Intiface Control integration."""
 
-DOMAIN = "buttplug"
+DOMAIN = "intiface_control"
 
 CONF_URL = "url"
 CONF_FALLBACK_URL = "fallback_url"
@@ -17,4 +17,4 @@ UPDATE_INTERVAL_SECONDS = 5
 # everything offline, while still eventually reflecting a real outage.
 MAX_CONSECUTIVE_FAILURES = 3
 
-CLIENT_NAME = "home-assistant-buttplug"
+CLIENT_NAME = "home-assistant-intiface-control"

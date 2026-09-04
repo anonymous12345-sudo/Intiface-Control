@@ -84,26 +84,26 @@ if that's you.
 
 ### Manual installation
 
-1. Download this repository (or just the `custom_components/buttplug`
+1. Download this repository (or just the `custom_components/intiface_control`
    folder).
 2. Copy the **entire `buttplug` folder** into your Home Assistant
    config directory, so you end up with:
    ```
-   config/custom_components/buttplug/manifest.json
-   config/custom_components/buttplug/__init__.py
-   config/custom_components/buttplug/coordinator.py
-   config/custom_components/buttplug/client.py
-   config/custom_components/buttplug/config_flow.py
-   config/custom_components/buttplug/const.py
-   config/custom_components/buttplug/number.py
-   config/custom_components/buttplug/binary_sensor.py
-   config/custom_components/buttplug/sensor.py
-   config/custom_components/buttplug/switch.py
-   config/custom_components/buttplug/services.yaml
-   config/custom_components/buttplug/strings.json
-   config/custom_components/buttplug/translations/en.json
+   config/custom_components/intiface_control/manifest.json
+   config/custom_components/intiface_control/__init__.py
+   config/custom_components/intiface_control/coordinator.py
+   config/custom_components/intiface_control/client.py
+   config/custom_components/intiface_control/config_flow.py
+   config/custom_components/intiface_control/const.py
+   config/custom_components/intiface_control/number.py
+   config/custom_components/intiface_control/binary_sensor.py
+   config/custom_components/intiface_control/sensor.py
+   config/custom_components/intiface_control/switch.py
+   config/custom_components/intiface_control/services.yaml
+   config/custom_components/intiface_control/strings.json
+   config/custom_components/intiface_control/translations/en.json
    ```
-   (Not `config/custom_components/buttplug/custom_components/buttplug/...`
+   (Not `config/custom_components/intiface_control/custom_components/intiface_control/...`
    — a common mistake if you copy the whole repo instead of just this
    folder's contents.)
 3. Restart Home Assistant.
@@ -203,49 +203,52 @@ react to.
 Two services are available for background patterns, for any device
 with an intensity capability (vibrate, oscillate, rotate, or
 constrict). Both run a single wave or pulse cycle, optionally repeated
-— not a continuous effect for a fixed total duration.
+— not a continuous effect for a fixed total duration. Both target one
+or more toys using Home Assistant's own device picker — pick a toy (or
+several) the same way you would when targeting a device in an
+automation, no need to know or type a device's internal slug.
 
-### `buttplug.start_pattern`
+### `intiface_control.start_wave_pattern`
 
-| Field | Required | Description |
-|---|---|---|
-| `target` | Yes | A device slug (see [How devices are identified](#how-devices-are-identified)), or `all` / `both` for every connected toy. |
-| `pattern` | Yes | `wave` or `pulse`. |
-| `repeat` | No, default 1 | How many times to repeat the single wave/pulse cycle (1–100). |
-
-**Wave** — one smooth rise-and-fall: `min_speed` → `max_speed` → `min_speed`, over `duration` seconds.
+One smooth rise-and-fall: `min_speed` → `max_speed` → `min_speed`, over `duration` seconds.
 
 | Field | Required | Description |
 |---|---|---|
+| Target | Yes | One or more toys, picked via the device selector. |
+| `repeat` | No, default 1 | How many times to repeat the single wave cycle (1–100). |
 | `min_speed` | No, default 0 | The wave's trough, 0–100%. |
 | `max_speed` | No, default 50 | The wave's peak, 0–100%. |
 | `duration` | No, default 3 | How long **one** wave takes, in seconds (0.2–60). |
 
 ```yaml
-action: buttplug.start_pattern
+action: intiface_control.start_wave_pattern
+target:
+  device_id: abc123devicehash
 data:
-  target: lovense_hush
-  pattern: wave
   min_speed: 10
   max_speed: 80
   duration: 4
   repeat: 5
 ```
 
-**Pulse** — one low phase followed by one high phase.
+### `intiface_control.start_pulse_pattern`
+
+One low phase followed by one high phase.
 
 | Field | Required | Description |
 |---|---|---|
+| Target | Yes | One or more toys, picked via the device selector. |
+| `repeat` | No, default 1 | How many times to repeat the single pulse cycle (1–100). |
 | `low_speed` | No, default 0 | Speed during the low phase, 0–100%. |
 | `high_speed` | No, default 80 | Speed during the high phase, 0–100%. |
 | `low_duration` | No, default 2 | How long the low phase lasts, in seconds (0.2–60). |
 | `high_duration` | No, default 2 | How long the high phase lasts, in seconds (0.2–60). |
 
 ```yaml
-action: buttplug.start_pattern
+action: intiface_control.start_pulse_pattern
+target:
+  device_id: abc123devicehash
 data:
-  target: lovense_hush
-  pattern: pulse
   low_speed: 15
   high_speed: 90
   low_duration: 1.5
@@ -253,34 +256,30 @@ data:
   repeat: 10
 ```
 
-Wave-only fields are ignored for a pulse pattern and vice versa — no
-need to omit them, they're just not used.
-
-### `buttplug.stop_pattern`
+### `intiface_control.stop_pattern`
 
 | Field | Required | Description |
 |---|---|---|
-| `target` | Yes | A device slug, or `all` / `both`. |
+| Target | Yes | One or more toys, picked via the device selector. |
 
 ```yaml
-action: buttplug.stop_pattern
-data:
-  target: lovense_hush
+action: intiface_control.stop_pattern
+target:
+  device_id: abc123devicehash
 ```
 
 Notes:
 
-- Starting a pattern cancels any pattern already running on that
-  *exact* target string. `target: all` and `target: lovense_hush` are
-  tracked separately — starting a pattern on `all` does not cancel one
-  already running specifically on `lovense_hush`, and vice versa.
+- Starting a pattern cancels any pattern already running on that exact
+  toy. Selecting several toys in one service call runs the same pattern
+  on each of them independently (each gets its own cycle timing, they
+  aren't synchronized to a shared clock).
 - Moving a device's intensity slider directly cancels any pattern
-  running on that device's own slug.
+  running on that toy.
 - Both services are blocked while the global emergency stop switch, or
-  that specific device's own Enabled switch, is off/on respectively.
-  A device disabled mid-pattern is silently excluded from an `all`
-  pattern going forward — the pattern keeps running for every other
-  toy without needing to restart.
+  that specific toy's own Enabled switch, is off/on respectively — a
+  disabled toy simply refuses to start a pattern at all, rather than
+  silently being excluded from one running on other toys.
 
 ## Adding new toys
 
@@ -307,16 +306,15 @@ underscores. For example:
 | Hismith Sex Machine | `hismith_sex_machine` |
 | Simulated Stroker | `simulated_stroker` |
 
-This slug is what you use as `target` in the pattern services. You can
-find a device's exact slug in **Settings → Devices & services →
-Intiface Control → *pick the device*** — it's embedded in each entity's
-unique ID, or just check the entity ID Home Assistant assigned (e.g.
-`number.lovense_hush_intensity`).
+This slug shows up in each toy's entity IDs (e.g.
+`number.lovense_hush_intensity`) and unique IDs. You don't need it for
+the pattern services — those use Home Assistant's device picker instead
+— but it's useful for reading logs or writing your own templates.
 
 ## Troubleshooting
 
 **Integration doesn't show up when adding it**
-Double-check the folder structure under `custom_components/buttplug/`
+Double-check the folder structure under `custom_components/intiface_control/`
 — see the note in [Manual installation](#manual-installation) about
 avoiding an accidentally double-nested folder. Then check **Settings →
 System → Logs** for an error mentioning `custom_components.buttplug`.
@@ -368,7 +366,7 @@ latest *release* to determine the available version.
 
 A minimal flow:
 
-1. Bump `"version"` in `custom_components/buttplug/manifest.json`.
+1. Bump `"version"` in `custom_components/intiface_control/manifest.json`.
 2. Commit and push.
 3. On GitHub: **Releases → Draft a new release**, create a new tag
    matching the version (e.g. `v0.2.0`), publish it.

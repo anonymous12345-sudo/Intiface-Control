@@ -20,17 +20,17 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import ButtplugCoordinator
+from .coordinator import IntifaceCoordinator
 
 
-class ButtplugConnectivityBinarySensor(CoordinatorEntity[ButtplugCoordinator], BinarySensorEntity):
+class IntifaceConnectivityBinarySensor(CoordinatorEntity[IntifaceCoordinator], BinarySensorEntity):
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
     _attr_has_entity_name = True
     _attr_translation_key = "connected"
     # Deliberately no `available` override here: this entity always stays
     # available — its *state* (is_on) is what reflects online/offline.
 
-    def __init__(self, coordinator: ButtplugCoordinator, entry_id: str, slug: str, name: str) -> None:
+    def __init__(self, coordinator: IntifaceCoordinator, entry_id: str, slug: str, name: str) -> None:
         super().__init__(coordinator)
         self._slug = slug
         self._attr_unique_id = f"{entry_id}_{slug}_connected"
@@ -46,11 +46,11 @@ class ButtplugConnectivityBinarySensor(CoordinatorEntity[ButtplugCoordinator], B
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
-    coordinator: ButtplugCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: IntifaceCoordinator = hass.data[DOMAIN][entry.entry_id]
 
     def _add_for_new_devices(new_devices) -> None:
         entities = [
-            ButtplugConnectivityBinarySensor(coordinator, entry.entry_id, slug, getattr(dev, "name", slug))
+            IntifaceConnectivityBinarySensor(coordinator, entry.entry_id, slug, getattr(dev, "name", slug))
             for slug, dev, caps in new_devices
         ]
         if entities:

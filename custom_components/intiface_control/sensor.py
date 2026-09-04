@@ -15,17 +15,17 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import ButtplugCoordinator
+from .coordinator import IntifaceCoordinator
 
 
-class ButtplugBatterySensor(CoordinatorEntity[ButtplugCoordinator], SensorEntity):
+class IntifaceBatterySensor(CoordinatorEntity[IntifaceCoordinator], SensorEntity):
     _attr_device_class = SensorDeviceClass.BATTERY
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_has_entity_name = True
     _attr_translation_key = "battery"
 
-    def __init__(self, coordinator: ButtplugCoordinator, entry_id: str, slug: str, name: str) -> None:
+    def __init__(self, coordinator: IntifaceCoordinator, entry_id: str, slug: str, name: str) -> None:
         super().__init__(coordinator)
         self._slug = slug
         self._attr_unique_id = f"{entry_id}_{slug}_battery"
@@ -46,11 +46,11 @@ class ButtplugBatterySensor(CoordinatorEntity[ButtplugCoordinator], SensorEntity
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
-    coordinator: ButtplugCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: IntifaceCoordinator = hass.data[DOMAIN][entry.entry_id]
 
     def _add_for_new_devices(new_devices) -> None:
         entities = [
-            ButtplugBatterySensor(coordinator, entry.entry_id, slug, getattr(dev, "name", slug))
+            IntifaceBatterySensor(coordinator, entry.entry_id, slug, getattr(dev, "name", slug))
             for slug, dev, caps in new_devices
             if "battery" in caps
         ]

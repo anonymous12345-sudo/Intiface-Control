@@ -305,36 +305,34 @@ async def _run_pulse_cycle(
             elapsed += TICK_SECONDS
 
 
-async def run_pattern_loop(
-    devs_getter,
-    pattern_type: str,
-    target_label: str,
-    repeat: int,
-    min_speed: float = 0.0,
-    max_speed: float = 0.5,
-    wave_duration: float = 3.0,
-    low_speed: float = 0.0,
-    high_speed: float = 0.8,
-    low_duration: float = 2.0,
-    high_duration: float = 2.0,
-) -> None:
-    """Runs a single wave or pulse cycle `repeat` times back to back, on
-    whatever devices `devs_getter()` returns on each tick (a callable,
-    not a fixed list, so it stays correct even if the device set changes
-    mid-pattern — e.g. a toy reconnecting, or getting disabled via its
-    own Enabled switch mid-run).
-
-    All speed arguments are 0.0-1.0 fractions. Wave-specific arguments
-    (min_speed/max_speed/wave_duration) are ignored for pulse patterns
-    and vice versa (low_speed/high_speed/low_duration/high_duration)."""
+async def run_wave_pattern(devs_getter, target_label: str, repeat: int, min_speed: float, max_speed: float, duration: float) -> None:
+    """Runs a single wave cycle `repeat` times back to back, on whatever
+    devices `devs_getter()` returns on each tick (a callable, not a fixed
+    list, so it stays correct even if the device set changes mid-pattern
+    — e.g. a toy reconnecting, or getting disabled via its own Enabled
+    switch mid-run). min_speed/max_speed are 0.0-1.0 fractions."""
     try:
         for _rep in range(repeat):
-            if pattern_type == "wave":
-                await _run_wave_cycle(devs_getter, min_speed, max_speed, wave_duration)
-            elif pattern_type == "pulse":
-                await _run_pulse_cycle(devs_getter, low_speed, high_speed, low_duration, high_duration)
+            await _run_wave_cycle(devs_getter, min_speed, max_speed, duration)
     except asyncio.CancelledError:
-        _LOGGER.info("Pattern for %s was cancelled.", target_label)
+        _LOGGER.info("Wave pattern for %s was cancelled.", target_label)
+    finally:
+        for dev in devs_getter():
+            await stop_device(dev)
+
+
+async def run_pulse_pattern(
+    devs_getter, target_label: str, repeat: int, low_speed: float, high_speed: float, low_duration: float, high_duration: float
+) -> None:
+    """Runs a single pulse cycle (low phase then high phase) `repeat`
+    times back to back. See run_wave_pattern() above for the shared
+    devs_getter()/cancellation/cleanup behaviour. low_speed/high_speed
+    are 0.0-1.0 fractions."""
+    try:
+        for _rep in range(repeat):
+            await _run_pulse_cycle(devs_getter, low_speed, high_speed, low_duration, high_duration)
+    except asyncio.CancelledError:
+        _LOGGER.info("Pulse pattern for %s was cancelled.", target_label)
     finally:
         for dev in devs_getter():
             await stop_device(dev)

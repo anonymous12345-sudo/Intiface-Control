@@ -26,17 +26,17 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import ButtplugCoordinator
+from .coordinator import IntifaceCoordinator
 
 
-class ButtplugStopAllSwitch(SwitchEntity):
+class IntifaceStopAllSwitch(SwitchEntity):
     """Entry-wide emergency stop — affects every connected toy."""
 
     _attr_has_entity_name = True
     _attr_translation_key = "stop_all"
     _attr_icon = "mdi:stop-circle"
 
-    def __init__(self, coordinator: ButtplugCoordinator, entry_id: str) -> None:
+    def __init__(self, coordinator: IntifaceCoordinator, entry_id: str) -> None:
         self._coordinator = coordinator
         self._attr_unique_id = f"{entry_id}_stop_all"
         self._attr_is_on = False
@@ -56,7 +56,7 @@ class ButtplugStopAllSwitch(SwitchEntity):
         self.async_write_ha_state()
 
 
-class ButtplugEnableSwitch(CoordinatorEntity[ButtplugCoordinator], SwitchEntity):
+class IntifaceEnableSwitch(CoordinatorEntity[IntifaceCoordinator], SwitchEntity):
     """Per-device enable/disable — ON (default) means this toy responds
     normally; OFF immediately stops it and refuses further commands to it
     until switched back on. `is_on` is always computed live from the
@@ -67,7 +67,7 @@ class ButtplugEnableSwitch(CoordinatorEntity[ButtplugCoordinator], SwitchEntity)
     _attr_translation_key = "enabled"
     _attr_icon = "mdi:power"
 
-    def __init__(self, coordinator: ButtplugCoordinator, entry_id: str, slug: str, name: str) -> None:
+    def __init__(self, coordinator: IntifaceCoordinator, entry_id: str, slug: str, name: str) -> None:
         super().__init__(coordinator)
         self._slug = slug
         self._attr_unique_id = f"{entry_id}_{slug}_enabled"
@@ -95,12 +95,12 @@ class ButtplugEnableSwitch(CoordinatorEntity[ButtplugCoordinator], SwitchEntity)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
-    coordinator: ButtplugCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities([ButtplugStopAllSwitch(coordinator, entry.entry_id)])
+    coordinator: IntifaceCoordinator = hass.data[DOMAIN][entry.entry_id]
+    async_add_entities([IntifaceStopAllSwitch(coordinator, entry.entry_id)])
 
     def _add_for_new_devices(new_devices) -> None:
         entities = [
-            ButtplugEnableSwitch(coordinator, entry.entry_id, slug, getattr(dev, "name", slug))
+            IntifaceEnableSwitch(coordinator, entry.entry_id, slug, getattr(dev, "name", slug))
             for slug, dev, caps in new_devices
         ]
         if entities:

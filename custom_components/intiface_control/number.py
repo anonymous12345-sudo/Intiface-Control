@@ -15,7 +15,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import ButtplugCoordinator
+from .coordinator import IntifaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ def _device_info(entry_id: str, slug: str, name: str) -> DeviceInfo:
     )
 
 
-class ButtplugIntensityNumber(CoordinatorEntity[ButtplugCoordinator], NumberEntity):
+class IntifaceIntensityNumber(CoordinatorEntity[IntifaceCoordinator], NumberEntity):
     """Generic 0-100% intensity control — maps to whichever output type
     (vibrate/oscillate/rotate/constrict) the device actually supports."""
 
@@ -41,7 +41,7 @@ class ButtplugIntensityNumber(CoordinatorEntity[ButtplugCoordinator], NumberEnti
     _attr_has_entity_name = True
     _attr_translation_key = "intensity"
 
-    def __init__(self, coordinator: ButtplugCoordinator, entry_id: str, slug: str, name: str) -> None:
+    def __init__(self, coordinator: IntifaceCoordinator, entry_id: str, slug: str, name: str) -> None:
         super().__init__(coordinator)
         self._slug = slug
         self._attr_unique_id = f"{entry_id}_{slug}_intensity"
@@ -70,7 +70,7 @@ class ButtplugIntensityNumber(CoordinatorEntity[ButtplugCoordinator], NumberEnti
         await self.coordinator.async_apply_intensity(self._slug, value)
 
 
-class ButtplugPositionNumber(CoordinatorEntity[ButtplugCoordinator], NumberEntity):
+class IntifacePositionNumber(CoordinatorEntity[IntifaceCoordinator], NumberEntity):
     """0-100% position control for linear devices (e.g. a stroker). Moves
     immediately — no duration control on this entity in this first
     version; the underlying coordinator method does support duration_ms
@@ -83,7 +83,7 @@ class ButtplugPositionNumber(CoordinatorEntity[ButtplugCoordinator], NumberEntit
     _attr_has_entity_name = True
     _attr_translation_key = "position"
 
-    def __init__(self, coordinator: ButtplugCoordinator, entry_id: str, slug: str, name: str) -> None:
+    def __init__(self, coordinator: IntifaceCoordinator, entry_id: str, slug: str, name: str) -> None:
         super().__init__(coordinator)
         self._slug = slug
         self._attr_unique_id = f"{entry_id}_{slug}_position"
@@ -92,7 +92,7 @@ class ButtplugPositionNumber(CoordinatorEntity[ButtplugCoordinator], NumberEntit
         coordinator.add_stop_listener(self._on_stop)
 
     def _on_stop(self, affected_slug: str | None) -> None:
-        """See ButtplugIntensityNumber._on_stop() above."""
+        """See IntifaceIntensityNumber._on_stop() above."""
         if affected_slug is not None and affected_slug != self._slug:
             return
         self._attr_native_value = 0.0
@@ -109,16 +109,16 @@ class ButtplugPositionNumber(CoordinatorEntity[ButtplugCoordinator], NumberEntit
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
-    coordinator: ButtplugCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: IntifaceCoordinator = hass.data[DOMAIN][entry.entry_id]
 
     def _add_for_new_devices(new_devices) -> None:
         entities = []
         for slug, dev, caps in new_devices:
             name = getattr(dev, "name", slug)
             if INTENSITY_CAPS.intersection(caps):
-                entities.append(ButtplugIntensityNumber(coordinator, entry.entry_id, slug, name))
+                entities.append(IntifaceIntensityNumber(coordinator, entry.entry_id, slug, name))
             if "position" in caps or "position_with_duration" in caps:
-                entities.append(ButtplugPositionNumber(coordinator, entry.entry_id, slug, name))
+                entities.append(IntifacePositionNumber(coordinator, entry.entry_id, slug, name))
         if entities:
             async_add_entities(entities)
 

@@ -1,4 +1,4 @@
-"""Tests for ButtplugCoordinator: device discovery, the emergency-stop
+"""Tests for IntifaceCoordinator: device discovery, the emergency-stop
 gate, pattern handling, and the cancellation race-condition fix.
 
 The real `buttplug.ButtplugClient` tries to open an actual WebSocket
@@ -21,9 +21,9 @@ import asyncio
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.buttplug import client as bp
-from custom_components.buttplug.const import CONF_FALLBACK_URL, CONF_URL, DOMAIN
-from custom_components.buttplug.coordinator import ButtplugCoordinator
+from custom_components.intiface_control import client as bp
+from custom_components.intiface_control.const import CONF_FALLBACK_URL, CONF_URL, DOMAIN
+from custom_components.intiface_control.coordinator import IntifaceCoordinator
 
 
 class FakeButtplugClient:
@@ -56,7 +56,7 @@ async def coordinator(hass, mock_bp_client):
         data={CONF_URL: "ws://fake:12345", CONF_FALLBACK_URL: None},
     )
     entry.add_to_hass(hass)
-    coord = ButtplugCoordinator(hass, entry)
+    coord = IntifaceCoordinator(hass, entry)
     # Bypass the real connect/scan flow (and its 2s scan-window sleep) —
     # tests only care about behaviour once a connection already exists.
     coord._bp_client = FakeButtplugClient("test")
@@ -188,25 +188,21 @@ async def test_device_stop_notifies_listener_with_its_own_slug_only(coordinator,
 
 
 @pytest.mark.asyncio
-async def test_all_pattern_skips_disabled_device_but_keeps_running_for_others(coordinator, fake_device) -> None:
-    """The key behaviour of the Enabled switch design: disabling a toy
-    mid-pattern silently excludes it from that tick onward, without
-    needing to cancel or restart the pattern for the devices that are
-    still enabled."""
+async def test_disabled_device_refuses_wave_pattern_start(coordinator, fake_device) -> None:
+    """With "all"/"both" targeting removed, a per-device stop now simply
+    refuses to start a pattern on that device at all — there's no more
+    multi-device pattern for it to be silently excluded from."""
     hush = fake_device("Lovense Hush", outputs={bp.VIBRATE})
-    hismith = fake_device("Hismith Sex Machine", outputs={bp.OSCILLATE})
-    coordinator._bp_client.devices = {0: hush, 1: hismith}
+    coordinator._bp_client.devices = {0: hush}
     await coordinator.async_refresh()
 
     await coordinator.async_stop_device("lovense_hush")
     hush.sent.clear()
-    hismith.sent.clear()
 
-    await coordinator.async_start_pattern("all", "wave", wave_duration=1, max_speed_percent=80)
+    await coordinator.async_start_wave_pattern("lovense_hush", wave_duration=1, max_speed_percent=80)
     await asyncio.sleep(1.3)
 
-    assert hush.sent == [], "disabled device must receive nothing from an 'all' pattern"
-    assert len(hismith.sent) > 3, "other devices must keep running normally"
+    assert hush.sent == [], "a disabled device must refuse to start a pattern entirely"
 
 
 @pytest.mark.asyncio
@@ -223,7 +219,7 @@ async def test_pattern_cancellation_completes_before_next_command_is_sent(coordi
     coordinator._bp_client.devices = {0: dev}
     await coordinator.async_refresh()
 
-    await coordinator.async_start_pattern("lovense_hush", "wave", wave_duration=10, max_speed_percent=90)
+    await coordinator.async_start_wave_pattern("lovense_hush", duration=10, max_speed_percent=90)
     await asyncio.sleep(0.3)
 
     await coordinator.async_apply_intensity("lovense_hush", 42)
@@ -240,7 +236,7 @@ async def test_pattern_start_and_stop(coordinator, fake_device) -> None:
     coordinator._bp_client.devices = {0: dev}
     await coordinator.async_refresh()
 
-    await coordinator.async_start_pattern("lovense_hush", "wave", wave_duration=1, max_speed_percent=80)
+    await coordinator.async_start_wave_pattern("lovense_hush", duration=1, max_speed_percent=80)
     await asyncio.sleep(1.3)
 
     assert len(dev.sent) > 3, "expected several commands during a 1s wave pattern"
@@ -256,8 +252,8 @@ async def test_wave_pattern_rises_and_falls_symmetrically(coordinator, fake_devi
     coordinator._bp_client.devices = {0: dev}
     await coordinator.async_refresh()
 
-    await coordinator.async_start_pattern(
-        "lovense_hush", "wave", wave_duration=3, min_speed_percent=10, max_speed_percent=90
+    await coordinator.async_start_wave_pattern(
+        "lovense_hush", duration=3, min_speed_percent=10, max_speed_percent=90
     )
     await asyncio.sleep(3.3)
 
@@ -275,8 +271,8 @@ async def test_pulse_pattern_holds_low_then_high(coordinator, fake_device) -> No
     coordinator._bp_client.devices = {0: dev}
     await coordinator.async_refresh()
 
-    await coordinator.async_start_pattern(
-        "lovense_hush", "pulse",
+    await coordinator.async_start_pulse_pattern(
+        "lovense_hush",
         low_speed_percent=10, high_speed_percent=90,
         low_duration=0.4, high_duration=0.4,
     )
@@ -296,8 +292,8 @@ async def test_pattern_repeat_runs_multiple_cycles(coordinator, fake_device) -> 
     coordinator._bp_client.devices = {0: dev}
     await coordinator.async_refresh()
 
-    await coordinator.async_start_pattern(
-        "lovense_hush", "pulse", repeat=3,
+    await coordinator.async_start_pulse_pattern(
+        "lovense_hush", repeat=3,
         low_speed_percent=10, high_speed_percent=90,
         low_duration=0.2, high_duration=0.2,
     )

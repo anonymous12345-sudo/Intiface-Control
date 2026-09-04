@@ -36,7 +36,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-class ButtplugCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
+class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     """Coordinates the Intiface connection and the list of known devices."""
 
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -55,8 +55,7 @@ class ButtplugCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._connect_lock = asyncio.Lock()
         self._consecutive_failures = 0
 
-        # Running pattern tasks, keyed by target (slug or "all"/"both").
-        # Mirrors the standalone bridge's active_patterns dict.
+        # Running pattern tasks, keyed by device slug.
         self._active_patterns: dict[str, asyncio.Task] = {}
 
         # True while the emergency-stop switch is on. Acts as a real gate:
@@ -191,29 +190,29 @@ class ButtplugCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         return data
 
-    def _devices_matching(self, target: str) -> list:
-        """Devices belonging to `target` — a device slug, or "all"/"both"
-        for everything. Re-evaluated fresh on every call (not cached), so
-        it stays correct even if a device reconnects with a new object
-        instance mid-pattern. Devices under a per-device stop are always
-        excluded here, even when `target` is "all"/"both" — this is what
-        makes a running "all" pattern automatically skip a toy the moment
-        its own stop switch engages, without any extra cancellation logic."""
-        target = (target or "").strip().lower()
-        devs = [d for d in self._devices() if bp.device_slug(d) not in self.per_slug_stopped]
-        if target in ("all", "both", ""):
-            return devs
-        return [d for d in devs if bp.device_slug(d) == target]
+    def _devices_matching(self, slug: str) -> list:
+        """The single device matching `slug`, wrapped in a list (for a
+        uniform devs_getter() interface shared with the pattern
+        functions) — empty if the device isn't currently connected or is
+        under its own per-device stop. Re-evaluated fresh on every call
+        (not cached), so it stays correct even if the device reconnects
+        with a new object instance mid-pattern, or gets disabled via its
+        own Enabled switch mid-run."""
+        slug = (slug or "").strip().lower()
+        if slug in self.per_slug_stopped:
+            return []
+        dev = self.get_device(slug)
+        return [dev] if dev is not None else []
 
-    async def _cancel_pattern(self, target: str) -> None:
-        """Cancels any pattern running for `target` and waits for its
+    async def _cancel_pattern(self, slug: str) -> None:
+        """Cancels any pattern running for `slug` and waits for its
         cleanup (which stops the device) to actually finish before
         returning. This matters: task.cancel() alone only *requests*
         cancellation — the pattern's finally-block stop_device() call
         runs later, asynchronously. Without waiting for it here, a
         direct intensity command issued right after cancelling could
         race against that pending stop and get silently overwritten."""
-        task = self._active_patterns.pop(target, None)
+        task = self._active_patterns.pop(slug, None)
         if task is not None and not task.done():
             task.cancel()
             try:
@@ -221,63 +220,80 @@ class ButtplugCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             except asyncio.CancelledError:
                 pass
             except Exception:
-                _LOGGER.debug("Pattern task for %s raised during cancellation", target, exc_info=True)
+                _LOGGER.debug("Pattern task for %s raised during cancellation", slug, exc_info=True)
 
     def _prune_finished_patterns(self) -> None:
         for t in [t for t, task in self._active_patterns.items() if task.done()]:
             self._active_patterns.pop(t, None)
 
-    async def async_start_pattern(
+    async def async_start_wave_pattern(
         self,
-        target: str,
-        pattern_type: str,
+        slug: str,
         repeat: int = 1,
         min_speed_percent: float = 0.0,
         max_speed_percent: float = 50.0,
-        wave_duration: float = 3.0,
+        duration: float = 3.0,
+    ) -> None:
+        """*_percent arguments are 0-100. Cancels any pattern already
+        running for this slug before starting the new one. Refuses if
+        the global stop switch or this device's own Enabled switch is
+        off."""
+        if self.stopped:
+            _LOGGER.warning("Ignoring start_wave_pattern for %s: stop switch is on", slug)
+            return
+        if slug in self.per_slug_stopped:
+            _LOGGER.warning("Ignoring start_wave_pattern for %s: device stop switch is on", slug)
+            return
+        await self._cancel_pattern(slug)
+        self._prune_finished_patterns()
+        task = self.hass.async_create_task(
+            bp.run_wave_pattern(
+                lambda: self._devices_matching(slug),
+                slug,
+                repeat,
+                min_speed_percent / 100.0,
+                max_speed_percent / 100.0,
+                duration,
+            )
+        )
+        self._active_patterns[slug] = task
+
+    async def async_start_pulse_pattern(
+        self,
+        slug: str,
+        repeat: int = 1,
         low_speed_percent: float = 0.0,
         high_speed_percent: float = 80.0,
         low_duration: float = 2.0,
         high_duration: float = 2.0,
     ) -> None:
-        """All *_percent arguments are 0-100. Cancels any pattern already
-        running for this exact target string before starting the new one
-        — note that "lovense_hush" and "all" are tracked as separate
-        targets, so starting a pattern on "all" does not automatically
-        cancel one already running on a specific device slug (matches
-        the standalone bridge's behaviour).
-
-        A specific device slug that's individually stopped refuses to
-        start at all here; a stopped device inside an "all"/"both" pattern
-        is instead silently excluded on every tick by _devices_matching()
-        — the pattern still starts and runs for the other devices."""
+        """*_percent arguments are 0-100. Cancels any pattern already
+        running for this slug before starting the new one. Refuses if
+        the global stop switch or this device's own Enabled switch is
+        off."""
         if self.stopped:
-            _LOGGER.warning("Ignoring start_pattern for %s: stop switch is on", target)
+            _LOGGER.warning("Ignoring start_pulse_pattern for %s: stop switch is on", slug)
             return
-        if target in self.per_slug_stopped:
-            _LOGGER.warning("Ignoring start_pattern for %s: device stop switch is on", target)
+        if slug in self.per_slug_stopped:
+            _LOGGER.warning("Ignoring start_pulse_pattern for %s: device stop switch is on", slug)
             return
-        await self._cancel_pattern(target)
+        await self._cancel_pattern(slug)
         self._prune_finished_patterns()
         task = self.hass.async_create_task(
-            bp.run_pattern_loop(
-                lambda: self._devices_matching(target),
-                pattern_type,
-                target,
+            bp.run_pulse_pattern(
+                lambda: self._devices_matching(slug),
+                slug,
                 repeat,
-                min_speed=min_speed_percent / 100.0,
-                max_speed=max_speed_percent / 100.0,
-                wave_duration=wave_duration,
-                low_speed=low_speed_percent / 100.0,
-                high_speed=high_speed_percent / 100.0,
-                low_duration=low_duration,
-                high_duration=high_duration,
+                low_speed_percent / 100.0,
+                high_speed_percent / 100.0,
+                low_duration,
+                high_duration,
             )
         )
-        self._active_patterns[target] = task
+        self._active_patterns[slug] = task
 
-    async def async_stop_pattern(self, target: str) -> None:
-        await self._cancel_pattern(target)
+    async def async_stop_pattern(self, slug: str) -> None:
+        await self._cancel_pattern(slug)
 
     def get_device(self, slug: str):
         entry = (self.data or {}).get(slug)
@@ -340,10 +356,8 @@ class ButtplugCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         """Stops a single toy immediately and engages a per-device gate:
         subsequent commands targeting just this slug are refused until
         async_clear_device_stop() is called. Also cancels any pattern
-        running specifically on this device's own slug (a pattern running
-        on "all"/"both" instead just silently stops including this device
-        on its next tick, via _devices_matching()) and notifies stop
-        listeners scoped to this slug so its own sliders reset to 0."""
+        running on this slug and notifies stop listeners scoped to this
+        slug so its own sliders reset to 0."""
         self.per_slug_stopped.add(slug)
         await self._cancel_pattern(slug)
         dev = self.get_device(slug)
