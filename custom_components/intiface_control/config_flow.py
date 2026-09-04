@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResult
 
@@ -44,7 +43,7 @@ class ButtplugConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             try:
                 await _test_connection(url)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 _LOGGER.debug("Connection test failed", exc_info=True)
                 errors["base"] = "cannot_connect"
             else:

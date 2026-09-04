@@ -126,7 +126,7 @@ class ButtplugCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     await c.connect(url)
                     last_err = None
                     break
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     last_err = exc
                     _LOGGER.warning("Connect to %s failed: %s", url, exc)
             if last_err is not None:
@@ -208,7 +208,7 @@ class ButtplugCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 await task
             except asyncio.CancelledError:
                 pass
-            except Exception:  # noqa: BLE001
+            except Exception:
                 _LOGGER.debug("Pattern task for %s raised during cancellation", target, exc_info=True)
 
     def _prune_finished_patterns(self) -> None:
@@ -297,6 +297,6 @@ class ButtplugCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         if self._bp_client is not None and hasattr(self._bp_client, "disconnect"):
             try:
                 await self._bp_client.disconnect()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 _LOGGER.debug("Error while disconnecting", exc_info=True)
         self._bp_client = None

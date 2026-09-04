@@ -14,12 +14,13 @@ import asyncio
 import logging
 import math
 import re
-from typing import Optional
 
 _LOGGER = logging.getLogger(__name__)
 
 try:
-    from buttplug import ButtplugClient, DeviceOutputCommand, OutputType
+    # ButtplugClient is re-exported here (not used directly in this file)
+    # so coordinator.py can reference it as bp.ButtplugClient(...).
+    from buttplug import ButtplugClient, DeviceOutputCommand, OutputType  # noqa: F401
 except ImportError as err:  # pragma: no cover - import guard
     raise ImportError("The 'buttplug' package is required for this integration") from err
 
@@ -90,7 +91,7 @@ def device_slug(dev) -> str:
     return slug or "device"
 
 
-def _has_output(dev, output_type) -> Optional[bool]:
+def _has_output(dev, output_type) -> bool | None:
     """Asks the device itself whether it supports a given output type.
     Returns None if introspection isn't possible (older library without
     has_output()) — callers should treat that as 'unknown', not as 'no'."""
@@ -101,7 +102,7 @@ def _has_output(dev, output_type) -> Optional[bool]:
         return None
     try:
         return bool(has_output_fn(output_type))
-    except Exception:  # noqa: BLE001
+    except Exception:
         _LOGGER.debug("has_output(%s) failed on %s", output_type, getattr(dev, "name", "?"), exc_info=True)
         return None
 
@@ -114,7 +115,7 @@ def has_battery(dev) -> bool:
     if has_input_fn is not None and BATTERY_INPUT is not None:
         try:
             return bool(has_input_fn(BATTERY_INPUT))
-        except Exception:  # noqa: BLE001
+        except Exception:
             _LOGGER.debug("has_input(Battery) failed on %s", getattr(dev, "name", "?"), exc_info=True)
     return hasattr(dev, "battery")
 
@@ -164,7 +165,7 @@ async def send(dev, output_type, intensity: float) -> bool:
         if hasattr(dev, "run_output"):
             await dev.run_output(DeviceOutputCommand(output_type, intensity))
             return True
-    except Exception:  # noqa: BLE001
+    except Exception:
         _LOGGER.warning("run_output failed on %s", getattr(dev, "name", "?"), exc_info=True)
     method_name = _METHOD_NAMES.get(output_type)
     if method_name:
@@ -173,7 +174,7 @@ async def send(dev, output_type, intensity: float) -> bool:
             try:
                 await method(intensity)
                 return True
-            except Exception:  # noqa: BLE001
+            except Exception:
                 _LOGGER.warning("%s() failed on %s", method_name, getattr(dev, "name", "?"), exc_info=True)
     return False
 
@@ -182,7 +183,7 @@ async def stop_device(dev) -> None:
     try:
         if hasattr(dev, "stop"):
             await dev.stop()
-    except Exception:  # noqa: BLE001
+    except Exception:
         _LOGGER.warning("stop failed on %s", getattr(dev, "name", "?"), exc_info=True)
 
 
@@ -224,7 +225,7 @@ async def send_position(dev, position: float, duration_ms: int) -> bool:
                 await attempt()
                 _LOGGER.debug("Position %s -> %.0f%% in %sms via %s", name, position * 100, duration_ms, description)
                 return True
-            except Exception:  # noqa: BLE001
+            except Exception:
                 _LOGGER.debug("PositionWithDuration attempt (%s) failed on %s", description, name, exc_info=True)
 
         for method_name, args in (("linear", (duration_ms, position)), ("position", (position, duration_ms))):
@@ -234,19 +235,18 @@ async def send_position(dev, position: float, duration_ms: int) -> bool:
                     await method(*args)
                     _LOGGER.debug("Position %s -> %.0f%% in %sms via %s()", name, position * 100, duration_ms, method_name)
                     return True
-                except Exception:  # noqa: BLE001
+                except Exception:
                     _LOGGER.debug("%s(%s) failed on %s", method_name, args, name, exc_info=True)
 
-    if POSITION is not None:
-        if await send(dev, POSITION, position):
-            _LOGGER.debug("Position %s -> %.0f%% (direct, duration not supported)", name, position * 100)
-            return True
+    if POSITION is not None and await send(dev, POSITION, position):
+        _LOGGER.debug("Position %s -> %.0f%% (direct, duration not supported)", name, position * 100)
+        return True
 
     _LOGGER.warning("Could not send a position command to %s (no working method found)", name)
     return False
 
 
-async def read_battery(dev) -> Optional[float]:
+async def read_battery(dev) -> float | None:
     try:
         if hasattr(dev, "battery"):
             raw = await dev.battery()
@@ -256,7 +256,7 @@ async def read_battery(dev) -> Optional[float]:
             if val <= 1.0:
                 val *= 100.0
             return max(0.0, min(100.0, val))
-    except Exception:  # noqa: BLE001
+    except Exception:
         _LOGGER.warning("battery() failed on %s", getattr(dev, "name", "?"), exc_info=True)
     return None
 
