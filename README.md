@@ -190,25 +190,59 @@ react to.
 
 Two services are available for background patterns, for any device
 with an intensity capability (vibrate, oscillate, rotate, or
-constrict):
+constrict). Both run a single wave or pulse cycle, optionally repeated
+— not a continuous effect for a fixed total duration.
 
 ### `buttplug.start_pattern`
 
 | Field | Required | Description |
 |---|---|---|
 | `target` | Yes | A device slug (see [How devices are identified](#how-devices-are-identified)), or `all` / `both` for every connected toy. |
-| `pattern` | Yes | `wave` (smooth sine oscillation) or `pulse` (2s on at max speed / 2s at a gentle 6% baseline). |
-| `duration` | No, default 60 | How long to run, in seconds (1–3600). |
-| `max_speed` | No, default 50 | Peak intensity, 0–100%. |
+| `pattern` | Yes | `wave` or `pulse`. |
+| `repeat` | No, default 1 | How many times to repeat the single wave/pulse cycle (1–100). |
+
+**Wave** — one smooth rise-and-fall: `min_speed` → `max_speed` → `min_speed`, over `duration` seconds.
+
+| Field | Required | Description |
+|---|---|---|
+| `min_speed` | No, default 0 | The wave's trough, 0–100%. |
+| `max_speed` | No, default 50 | The wave's peak, 0–100%. |
+| `duration` | No, default 3 | How long **one** wave takes, in seconds (0.2–60). |
 
 ```yaml
 action: buttplug.start_pattern
 data:
   target: lovense_hush
   pattern: wave
-  duration: 90
-  max_speed: 42
+  min_speed: 10
+  max_speed: 80
+  duration: 4
+  repeat: 5
 ```
+
+**Pulse** — one low phase followed by one high phase.
+
+| Field | Required | Description |
+|---|---|---|
+| `low_speed` | No, default 0 | Speed during the low phase, 0–100%. |
+| `high_speed` | No, default 80 | Speed during the high phase, 0–100%. |
+| `low_duration` | No, default 2 | How long the low phase lasts, in seconds (0.2–60). |
+| `high_duration` | No, default 2 | How long the high phase lasts, in seconds (0.2–60). |
+
+```yaml
+action: buttplug.start_pattern
+data:
+  target: lovense_hush
+  pattern: pulse
+  low_speed: 15
+  high_speed: 90
+  low_duration: 1.5
+  high_duration: 0.5
+  repeat: 10
+```
+
+Wave-only fields are ignored for a pulse pattern and vice versa — no
+need to omit them, they're just not used.
 
 ### `buttplug.stop_pattern`
 
@@ -230,8 +264,11 @@ Notes:
   already running specifically on `lovense_hush`, and vice versa.
 - Moving a device's intensity slider directly cancels any pattern
   running on that device's own slug.
-- Both services are blocked while the emergency stop switch is on,
-  same as direct intensity/position commands.
+- Both services are blocked while the global emergency stop switch, or
+  that specific device's own Enabled switch, is off/on respectively.
+  A device disabled mid-pattern is silently excluded from an `all`
+  pattern going forward — the pattern keeps running for every other
+  toy without needing to restart.
 
 ## Adding new toys
 

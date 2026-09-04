@@ -265,40 +265,74 @@ def _clamp01(v: float) -> float:
     return max(0.0, min(1.0, v))
 
 
-async def run_pattern_loop(devs_getter, pattern_type: str, duration: int, max_speed: float, target_label: str) -> None:
-    """Generates a tight, real-time wave or pulse motion in the background,
-    on whatever devices `devs_getter()` returns each tick (a callable, not
-    a fixed list, so it stays correct even if the device set changes
-    mid-pattern — e.g. a toy reconnecting).
+TICK_SECONDS = 0.2
 
-    Ported from the standalone ha_buttplug_bridge project's
-    patterns.run_pulse_wave(), unchanged in behaviour: wave is a smooth
-    sine oscillation, pulse is a 2s-on/2s-off square wave."""
-    start_time = asyncio.get_event_loop().time()
-    end_time = start_time + duration
-    tick = 0
 
-    try:
-        while asyncio.get_event_loop().time() < end_time:
+async def _run_wave_cycle(devs_getter, min_speed: float, max_speed: float, duration: float) -> None:
+    """One single wave: smoothly rises from min_speed to max_speed and
+    back down to min_speed over `duration` seconds — a single sine hump
+    (0 -> 1 -> 0 mapped across the full duration), not a repeating
+    oscillation. Call this once per repeat from run_pattern_loop()."""
+    elapsed = 0.0
+    while elapsed < duration:
+        progress = elapsed / duration if duration > 0 else 1.0
+        sin_val = math.sin(progress * math.pi)  # 0 at start/end, 1 at the midpoint
+        current_speed = _clamp01(min_speed + sin_val * (max_speed - min_speed))
+        for dev in devs_getter():
+            dev_output = intensity_output_type(dev)
+            if dev_output is None:
+                continue
+            await send(dev, dev_output, current_speed)
+        await asyncio.sleep(TICK_SECONDS)
+        elapsed += TICK_SECONDS
+
+
+async def _run_pulse_cycle(
+    devs_getter, low_speed: float, high_speed: float, low_duration: float, high_duration: float
+) -> None:
+    """One single pulse: low_speed held for low_duration seconds, then
+    high_speed held for high_duration seconds. Call this once per repeat
+    from run_pattern_loop()."""
+    for speed, phase_duration in ((low_speed, low_duration), (high_speed, high_duration)):
+        elapsed = 0.0
+        while elapsed < phase_duration:
             for dev in devs_getter():
                 dev_output = intensity_output_type(dev)
                 if dev_output is None:
                     continue
+                await send(dev, dev_output, _clamp01(speed))
+            await asyncio.sleep(TICK_SECONDS)
+            elapsed += TICK_SECONDS
 
-                if pattern_type == "wave":
-                    # Sine wave: smoothly oscillates between a comfortable baseline (5%) and max_speed
-                    sin_val = (math.sin(tick * 0.4) + 1) / 2
-                    current_speed = _clamp01(0.05 + (sin_val * (max_speed - 0.05)))
-                    await send(dev, dev_output, current_speed)
 
-                elif pattern_type == "pulse":
-                    # Square wave / pulse: 2 seconds hard at max_speed, 2 seconds gentle at 6%
-                    current_speed = _clamp01(max_speed if (tick % 20 < 10) else 0.06)
-                    await send(dev, dev_output, current_speed)
+async def run_pattern_loop(
+    devs_getter,
+    pattern_type: str,
+    target_label: str,
+    repeat: int,
+    min_speed: float = 0.0,
+    max_speed: float = 0.5,
+    wave_duration: float = 3.0,
+    low_speed: float = 0.0,
+    high_speed: float = 0.8,
+    low_duration: float = 2.0,
+    high_duration: float = 2.0,
+) -> None:
+    """Runs a single wave or pulse cycle `repeat` times back to back, on
+    whatever devices `devs_getter()` returns on each tick (a callable,
+    not a fixed list, so it stays correct even if the device set changes
+    mid-pattern — e.g. a toy reconnecting, or getting disabled via its
+    own Enabled switch mid-run).
 
-            tick += 1
-            await asyncio.sleep(0.2)
-
+    All speed arguments are 0.0-1.0 fractions. Wave-specific arguments
+    (min_speed/max_speed/wave_duration) are ignored for pulse patterns
+    and vice versa (low_speed/high_speed/low_duration/high_duration)."""
+    try:
+        for _rep in range(repeat):
+            if pattern_type == "wave":
+                await _run_wave_cycle(devs_getter, min_speed, max_speed, wave_duration)
+            elif pattern_type == "pulse":
+                await _run_pulse_cycle(devs_getter, low_speed, high_speed, low_duration, high_duration)
     except asyncio.CancelledError:
         _LOGGER.info("Pattern for %s was cancelled.", target_label)
     finally:

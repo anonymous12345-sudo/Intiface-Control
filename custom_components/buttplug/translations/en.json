@@ -36,7 +36,7 @@
   "services": {
     "start_pattern": {
       "name": "Start pattern",
-      "description": "Starts a wave or pulse background pattern on one or more toys.",
+      "description": "Runs a single wave or pulse cycle, optionally repeated. Wave-only fields are ignored for a pulse pattern and vice versa.",
       "fields": {
         "target": {
           "name": "Target",
@@ -46,13 +46,37 @@
           "name": "Pattern",
           "description": "Which pattern to run."
         },
-        "duration": {
-          "name": "Duration",
-          "description": "How long to run the pattern, in seconds."
+        "repeat": {
+          "name": "Repeat",
+          "description": "How many times to repeat the single wave/pulse cycle."
+        },
+        "min_speed": {
+          "name": "Min speed (wave)",
+          "description": "The wave's trough — its speed at the start and end of each cycle."
         },
         "max_speed": {
-          "name": "Max speed",
-          "description": "Peak intensity as a percentage."
+          "name": "Max speed (wave)",
+          "description": "The wave's peak — its speed at the midpoint of each cycle."
+        },
+        "duration": {
+          "name": "Duration (wave)",
+          "description": "How long one single wave (min \u2192 max \u2192 min) takes, in seconds."
+        },
+        "low_speed": {
+          "name": "Low speed (pulse)",
+          "description": "Speed during the low phase of each pulse cycle."
+        },
+        "high_speed": {
+          "name": "High speed (pulse)",
+          "description": "Speed during the high phase of each pulse cycle."
+        },
+        "low_duration": {
+          "name": "Low duration (pulse)",
+          "description": "How long the low phase lasts, in seconds."
+        },
+        "high_duration": {
+          "name": "High duration (pulse)",
+          "description": "How long the high phase lasts, in seconds."
         }
       }
     },

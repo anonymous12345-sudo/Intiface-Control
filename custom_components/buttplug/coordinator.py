@@ -227,13 +227,25 @@ class ButtplugCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         for t in [t for t, task in self._active_patterns.items() if task.done()]:
             self._active_patterns.pop(t, None)
 
-    async def async_start_pattern(self, target: str, pattern_type: str, duration: int, max_speed_percent: float) -> None:
-        """max_speed_percent is 0-100. Cancels any pattern already running
-        for this exact target string before starting the new one — note
-        that "lovense_hush" and "all" are tracked as separate targets, so
-        starting a pattern on "all" does not automatically cancel one
-        already running on a specific device slug (matches the standalone
-        bridge's behaviour).
+    async def async_start_pattern(
+        self,
+        target: str,
+        pattern_type: str,
+        repeat: int = 1,
+        min_speed_percent: float = 0.0,
+        max_speed_percent: float = 50.0,
+        wave_duration: float = 3.0,
+        low_speed_percent: float = 0.0,
+        high_speed_percent: float = 80.0,
+        low_duration: float = 2.0,
+        high_duration: float = 2.0,
+    ) -> None:
+        """All *_percent arguments are 0-100. Cancels any pattern already
+        running for this exact target string before starting the new one
+        — note that "lovense_hush" and "all" are tracked as separate
+        targets, so starting a pattern on "all" does not automatically
+        cancel one already running on a specific device slug (matches
+        the standalone bridge's behaviour).
 
         A specific device slug that's individually stopped refuses to
         start at all here; a stopped device inside an "all"/"both" pattern
@@ -251,9 +263,15 @@ class ButtplugCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             bp.run_pattern_loop(
                 lambda: self._devices_matching(target),
                 pattern_type,
-                duration,
-                max_speed_percent / 100.0,
                 target,
+                repeat,
+                min_speed=min_speed_percent / 100.0,
+                max_speed=max_speed_percent / 100.0,
+                wave_duration=wave_duration,
+                low_speed=low_speed_percent / 100.0,
+                high_speed=high_speed_percent / 100.0,
+                low_duration=low_duration,
+                high_duration=high_duration,
             )
         )
         self._active_patterns[target] = task

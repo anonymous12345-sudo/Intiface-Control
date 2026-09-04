@@ -202,7 +202,7 @@ async def test_all_pattern_skips_disabled_device_but_keeps_running_for_others(co
     hush.sent.clear()
     hismith.sent.clear()
 
-    await coordinator.async_start_pattern("all", "wave", duration=1, max_speed_percent=80)
+    await coordinator.async_start_pattern("all", "wave", wave_duration=1, max_speed_percent=80)
     await asyncio.sleep(1.3)
 
     assert hush.sent == [], "disabled device must receive nothing from an 'all' pattern"
@@ -223,7 +223,7 @@ async def test_pattern_cancellation_completes_before_next_command_is_sent(coordi
     coordinator._bp_client.devices = {0: dev}
     await coordinator.async_refresh()
 
-    await coordinator.async_start_pattern("lovense_hush", "wave", duration=10, max_speed_percent=90)
+    await coordinator.async_start_pattern("lovense_hush", "wave", wave_duration=10, max_speed_percent=90)
     await asyncio.sleep(0.3)
 
     await coordinator.async_apply_intensity("lovense_hush", 42)
@@ -240,8 +240,69 @@ async def test_pattern_start_and_stop(coordinator, fake_device) -> None:
     coordinator._bp_client.devices = {0: dev}
     await coordinator.async_refresh()
 
-    await coordinator.async_start_pattern("lovense_hush", "wave", duration=1, max_speed_percent=80)
+    await coordinator.async_start_pattern("lovense_hush", "wave", wave_duration=1, max_speed_percent=80)
     await asyncio.sleep(1.3)
 
     assert len(dev.sent) > 3, "expected several commands during a 1s wave pattern"
     assert dev.sent[-1] == ("STOP", None), "pattern should stop the device when it finishes"
+
+
+@pytest.mark.asyncio
+async def test_wave_pattern_rises_and_falls_symmetrically(coordinator, fake_device) -> None:
+    """A single wave must start near min_speed, peak near max_speed at
+    its midpoint, and come back down — not the old continuous
+    oscillation, and not a square wave."""
+    dev = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+
+    await coordinator.async_start_pattern(
+        "lovense_hush", "wave", wave_duration=3, min_speed_percent=10, max_speed_percent=90
+    )
+    await asyncio.sleep(3.3)
+
+    speeds = [v[0] for _, v in dev.sent[:-1]]
+    assert speeds[0] == pytest.approx(0.1, abs=0.01)
+    peak = max(speeds)
+    assert peak > 0.85
+    assert speeds.index(peak) == len(speeds) // 2 or abs(speeds.index(peak) - len(speeds) // 2) <= 1
+    assert speeds[-1] < peak - 0.3, "must have come back down from the peak by the end"
+
+
+@pytest.mark.asyncio
+async def test_pulse_pattern_holds_low_then_high(coordinator, fake_device) -> None:
+    dev = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+
+    await coordinator.async_start_pattern(
+        "lovense_hush", "pulse",
+        low_speed_percent=10, high_speed_percent=90,
+        low_duration=0.4, high_duration=0.4,
+    )
+    await asyncio.sleep(1.0)
+
+    speeds = [v[0] for _, v in dev.sent[:-1]]
+    n = len(speeds)
+    first_half = speeds[: n // 2]
+    second_half = speeds[n // 2 :]
+    assert all(v == pytest.approx(0.1, abs=0.01) for v in first_half)
+    assert all(v == pytest.approx(0.9, abs=0.01) for v in second_half)
+
+
+@pytest.mark.asyncio
+async def test_pattern_repeat_runs_multiple_cycles(coordinator, fake_device) -> None:
+    dev = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+
+    await coordinator.async_start_pattern(
+        "lovense_hush", "pulse", repeat=3,
+        low_speed_percent=10, high_speed_percent=90,
+        low_duration=0.2, high_duration=0.2,
+    )
+    await asyncio.sleep(1.5)
+
+    speeds = [v[0] for _, v in dev.sent[:-1]]
+    transitions = sum(1 for i in range(1, len(speeds)) if speeds[i - 1] < 0.5 < speeds[i])
+    assert transitions == 3, f"repeat=3 should produce exactly 3 low->high transitions, got {transitions}"

@@ -19,8 +19,16 @@ START_PATTERN_SCHEMA = vol.Schema(
     {
         vol.Required("target"): cv.string,
         vol.Required("pattern"): vol.In(["wave", "pulse"]),
-        vol.Optional("duration", default=60): vol.All(vol.Coerce(int), vol.Range(min=1, max=3600)),
+        vol.Optional("repeat", default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=100)),
+        # wave-only — ignored for pulse patterns
+        vol.Optional("min_speed", default=0): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
         vol.Optional("max_speed", default=50): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
+        vol.Optional("duration", default=3): vol.All(vol.Coerce(float), vol.Range(min=0.2, max=60)),
+        # pulse-only — ignored for wave patterns
+        vol.Optional("low_speed", default=0): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
+        vol.Optional("high_speed", default=80): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
+        vol.Optional("low_duration", default=2): vol.All(vol.Coerce(float), vol.Range(min=0.2, max=60)),
+        vol.Optional("high_duration", default=2): vol.All(vol.Coerce(float), vol.Range(min=0.2, max=60)),
     }
 )
 
@@ -46,8 +54,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 await coord.async_start_pattern(
                     call.data["target"],
                     call.data["pattern"],
-                    call.data["duration"],
-                    call.data["max_speed"],
+                    repeat=call.data["repeat"],
+                    min_speed_percent=call.data["min_speed"],
+                    max_speed_percent=call.data["max_speed"],
+                    wave_duration=call.data["duration"],
+                    low_speed_percent=call.data["low_speed"],
+                    high_speed_percent=call.data["high_speed"],
+                    low_duration=call.data["low_duration"],
+                    high_duration=call.data["high_duration"],
                 )
 
         async def _async_handle_stop_pattern(call: ServiceCall) -> None:
