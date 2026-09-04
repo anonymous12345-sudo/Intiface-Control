@@ -57,7 +57,7 @@ async def test_entities_created_match_device_capabilities(hass, setup_entry, fak
         0: fake_device("Lovense Hush", outputs={bp.VIBRATE}, battery=0.9),
         1: fake_device("Simulated Stroker", outputs={bp.POSITION}),
     }
-    await coordinator.async_request_refresh()
+    await coordinator.async_refresh()
     await hass.async_block_till_done()
 
     # Hush: intensity + battery + connected, no position
@@ -76,13 +76,13 @@ async def test_entities_created_match_device_capabilities(hass, setup_entry, fak
 async def test_offline_toy_goes_unavailable_but_entities_stay(hass, setup_entry, fake_device) -> None:
     coordinator = hass.data[DOMAIN][setup_entry.entry_id]
     coordinator._bp_client.devices = {0: fake_device("Lovense Hush", outputs={bp.VIBRATE})}
-    await coordinator.async_request_refresh()
+    await coordinator.async_refresh()
     await hass.async_block_till_done()
 
     assert hass.states.get("binary_sensor.lovense_hush_connected").state == "on"
 
     coordinator._bp_client.devices = {}
-    await coordinator.async_request_refresh()
+    await coordinator.async_refresh()
     await hass.async_block_till_done()
 
     # Entities still present — not removed — just reflecting offline.
@@ -99,7 +99,7 @@ async def test_offline_toy_goes_unavailable_but_entities_stay(hass, setup_entry,
 async def test_stop_switch_resets_slider_to_zero(hass, setup_entry, fake_device) -> None:
     coordinator = hass.data[DOMAIN][setup_entry.entry_id]
     coordinator._bp_client.devices = {0: fake_device("Lovense Hush", outputs={bp.VIBRATE})}
-    await coordinator.async_request_refresh()
+    await coordinator.async_refresh()
     await hass.async_block_till_done()
 
     await hass.services.async_call(
@@ -122,7 +122,7 @@ async def test_stop_switch_blocks_slider_commands_while_on(hass, setup_entry, fa
     coordinator = hass.data[DOMAIN][setup_entry.entry_id]
     dev = fake_device("Lovense Hush", outputs={bp.VIBRATE})
     coordinator._bp_client.devices = {0: dev}
-    await coordinator.async_request_refresh()
+    await coordinator.async_refresh()
     await hass.async_block_till_done()
 
     await hass.services.async_call(
