@@ -11,6 +11,8 @@ now or later, any brand the underlying `buttplug` library supports —
 shows up in Home Assistant as its own device, with the right controls
 already there.
 
+See [CHANGELOG.md](CHANGELOG.md) for what's changed in each release.
+
 ---
 
 ## Table of contents
@@ -128,6 +130,16 @@ you'll need to repeat this process to pick up a new version.
 You can add more than one config entry if you have more than one
 Intiface server to connect to (e.g. two separate phones each running
 Intiface Central).
+
+### Changing the Intiface URL later
+
+If Intiface's address changes (a new phone, a different network), you
+don't need to remove and re-add the integration — that would lose any
+entity customizations, dashboard references, and area assignments tied
+to it. Instead: **Settings → Devices & services → Intiface Control →
+Configure**, enter the new URL, save. The connection is tested the same
+way as during initial setup, and the integration reloads automatically
+once saved.
 
 ## Using the entities
 

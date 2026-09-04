@@ -17,6 +17,21 @@
       "already_configured": "This Intiface server is already configured."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Reconfigure Intiface Control",
+        "description": "Update the WebSocket URL of your Intiface Central instance. The integration reloads automatically once this is saved.",
+        "data": {
+          "url": "Intiface URL",
+          "fallback_url": "Fallback URL (optional)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to Intiface at that URL."
+    }
+  },
   "entity": {
     "number": {
       "intensity": { "name": "Intensity" },
