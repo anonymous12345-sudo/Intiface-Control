@@ -1,0 +1,50 @@
+start_pattern:
+  name: Start pattern
+  description: Starts a wave or pulse background pattern on one or more toys.
+  fields:
+    target:
+      name: Target
+      description: Device slug (e.g. lovense_hush), or "all" for every connected toy.
+      required: true
+      example: "lovense_hush"
+      selector:
+        text:
+    pattern:
+      name: Pattern
+      description: Which pattern to run.
+      required: true
+      selector:
+        select:
+          options:
+            - wave
+            - pulse
+    duration:
+      name: Duration
+      description: How long to run the pattern, in seconds.
+      default: 60
+      selector:
+        number:
+          min: 1
+          max: 3600
+          unit_of_measurement: seconds
+    max_speed:
+      name: Max speed
+      description: Peak intensity as a percentage.
+      default: 50
+      selector:
+        number:
+          min: 0
+          max: 100
+          unit_of_measurement: "%"
+
+stop_pattern:
+  name: Stop pattern
+  description: Stops any running pattern for the given target.
+  fields:
+    target:
+      name: Target
+      description: Device slug, or "all" for every connected toy.
+      required: true
+      example: "lovense_hush"
+      selector:
+        text:

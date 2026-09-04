@@ -1,0 +1,69 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Intiface",
+        "description": "Enter the WebSocket URL of your running Intiface Central instance.",
+        "data": {
+          "url": "Intiface URL",
+          "fallback_url": "Fallback URL (optional)"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to Intiface at that URL."
+    },
+    "abort": {
+      "already_configured": "This Intiface server is already configured."
+    }
+  },
+  "entity": {
+    "number": {
+      "intensity": { "name": "Intensity" },
+      "position": { "name": "Position" }
+    },
+    "binary_sensor": {
+      "connected": { "name": "Connected" }
+    },
+    "sensor": {
+      "battery": { "name": "Battery" }
+    },
+    "switch": {
+      "stop_all": { "name": "Stop all toys" }
+    }
+  },
+  "services": {
+    "start_pattern": {
+      "name": "Start pattern",
+      "description": "Starts a wave or pulse background pattern on one or more toys.",
+      "fields": {
+        "target": {
+          "name": "Target",
+          "description": "Device slug (e.g. lovense_hush), or \"all\" for every connected toy."
+        },
+        "pattern": {
+          "name": "Pattern",
+          "description": "Which pattern to run."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "How long to run the pattern, in seconds."
+        },
+        "max_speed": {
+          "name": "Max speed",
+          "description": "Peak intensity as a percentage."
+        }
+      }
+    },
+    "stop_pattern": {
+      "name": "Stop pattern",
+      "description": "Stops any running pattern for the given target.",
+      "fields": {
+        "target": {
+          "name": "Target",
+          "description": "Device slug, or \"all\" for every connected toy."
+        }
+      }
+    }
+  }
+}
