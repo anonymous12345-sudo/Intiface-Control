@@ -137,9 +137,76 @@ async def test_stop_all_notifies_stop_listeners(coordinator, fake_device) -> Non
     await coordinator.async_refresh()
 
     calls = []
-    coordinator.add_stop_listener(lambda: calls.append(True))
+    coordinator.add_stop_listener(lambda affected_slug: calls.append(affected_slug))
     await coordinator.async_stop_all()
-    assert calls == [True]
+    # None means "every device is affected" — a global stop, not scoped
+    # to one slug.
+    assert calls == [None]
+
+
+@pytest.mark.asyncio
+async def test_device_stop_blocks_only_that_device(coordinator, fake_device) -> None:
+    """Regression coverage for the per-device Enabled switch: disabling
+    one toy must refuse commands to it while leaving every other toy —
+    and the global stop switch's own state — completely unaffected."""
+    hush = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    hismith = fake_device("Hismith Sex Machine", outputs={bp.OSCILLATE})
+    coordinator._bp_client.devices = {0: hush, 1: hismith}
+    await coordinator.async_refresh()
+
+    await coordinator.async_stop_device("lovense_hush")
+    assert "lovense_hush" in coordinator.per_slug_stopped
+    assert hush.sent[-1] == ("STOP", None)
+
+    ok = await coordinator.async_apply_intensity("lovense_hush", 50)
+    assert ok is False, "disabled device should refuse commands"
+
+    ok = await coordinator.async_apply_intensity("hismith_sex_machine", 50)
+    assert ok is True, "other devices must be unaffected by one device's own stop"
+
+    assert coordinator.stopped is False, "a per-device stop must not engage the global gate"
+
+    coordinator.async_clear_device_stop("lovense_hush")
+    assert "lovense_hush" not in coordinator.per_slug_stopped
+    ok = await coordinator.async_apply_intensity("lovense_hush", 50)
+    assert ok is True, "re-enabling should restore normal operation"
+
+
+@pytest.mark.asyncio
+async def test_device_stop_notifies_listener_with_its_own_slug_only(coordinator, fake_device) -> None:
+    coordinator._bp_client.devices = {
+        0: fake_device("Lovense Hush", outputs={bp.VIBRATE}),
+        1: fake_device("Hismith Sex Machine", outputs={bp.OSCILLATE}),
+    }
+    await coordinator.async_refresh()
+
+    calls = []
+    coordinator.add_stop_listener(lambda affected_slug: calls.append(affected_slug))
+    await coordinator.async_stop_device("lovense_hush")
+
+    assert calls == ["lovense_hush"], "a per-device stop must only notify with its own slug"
+
+
+@pytest.mark.asyncio
+async def test_all_pattern_skips_disabled_device_but_keeps_running_for_others(coordinator, fake_device) -> None:
+    """The key behaviour of the Enabled switch design: disabling a toy
+    mid-pattern silently excludes it from that tick onward, without
+    needing to cancel or restart the pattern for the devices that are
+    still enabled."""
+    hush = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    hismith = fake_device("Hismith Sex Machine", outputs={bp.OSCILLATE})
+    coordinator._bp_client.devices = {0: hush, 1: hismith}
+    await coordinator.async_refresh()
+
+    await coordinator.async_stop_device("lovense_hush")
+    hush.sent.clear()
+    hismith.sent.clear()
+
+    await coordinator.async_start_pattern("all", "wave", duration=1, max_speed_percent=80)
+    await asyncio.sleep(1.3)
+
+    assert hush.sent == [], "disabled device must receive nothing from an 'all' pattern"
+    assert len(hismith.sent) > 3, "other devices must keep running normally"
 
 
 @pytest.mark.asyncio

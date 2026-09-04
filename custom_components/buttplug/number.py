@@ -49,10 +49,14 @@ class ButtplugIntensityNumber(CoordinatorEntity[ButtplugCoordinator], NumberEnti
         self._attr_native_value = 0.0
         coordinator.add_stop_listener(self._on_stop)
 
-    def _on_stop(self) -> None:
-        """Called by the coordinator when the emergency stop engages —
-        resets the displayed slider to 0 so it doesn't keep showing a
-        stale value the device is no longer actually at."""
+    def _on_stop(self, affected_slug: str | None) -> None:
+        """Called by the coordinator when a stop (global or per-device)
+        engages — resets the displayed slider to 0 so it doesn't keep
+        showing a stale value the device is no longer actually at.
+        `affected_slug` is None for a global stop (always applies) or a
+        specific slug for a per-device stop (only applies to that one)."""
+        if affected_slug is not None and affected_slug != self._slug:
+            return
         self._attr_native_value = 0.0
         self.async_write_ha_state()
 
@@ -87,8 +91,10 @@ class ButtplugPositionNumber(CoordinatorEntity[ButtplugCoordinator], NumberEntit
         self._attr_native_value = 0.0
         coordinator.add_stop_listener(self._on_stop)
 
-    def _on_stop(self) -> None:
+    def _on_stop(self, affected_slug: str | None) -> None:
         """See ButtplugIntensityNumber._on_stop() above."""
+        if affected_slug is not None and affected_slug != self._slug:
+            return
         self._attr_native_value = 0.0
         self.async_write_ha_state()
 

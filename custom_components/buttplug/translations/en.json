@@ -29,7 +29,8 @@
       "battery": { "name": "Battery" }
     },
     "switch": {
-      "stop_all": { "name": "Stop all toys" }
+      "stop_all": { "name": "Stop all toys" },
+      "enabled": { "name": "Enabled" }
     }
   },
   "services": {

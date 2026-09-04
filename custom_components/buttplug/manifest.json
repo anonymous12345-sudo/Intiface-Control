@@ -8,5 +8,5 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/anonymous12345-sudo/intiface-control/issues",
   "requirements": ["buttplug"],
-  "version": "0.1.1"
+  "version": "0.1.2"
 }

@@ -63,6 +63,10 @@ class ButtplugCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # every control method below refuses to send anything while this
         # is set, not just a one-off stop at the moment the switch flips.
         self.stopped: bool = False
+        # Slugs currently under a per-device stop switch. Same gate
+        # semantics as `stopped` above, but scoped to one toy instead of
+        # everything — see async_stop_device()/async_clear_device_stop().
+        self.per_slug_stopped: set[str] = set()
 
         # Slugs we've ever seen — lets platforms distinguish "brand new
         # device this cycle" from "device we already made entities for".
@@ -70,15 +74,19 @@ class ButtplugCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # Callbacks platforms register to get called with newly seen
         # devices: list[tuple[slug, device_obj, capabilities]].
         self._new_device_listeners: list = []
-        # Zero-argument callbacks number entities register to reset their
-        # displayed value (e.g. an intensity slider back to 0) the moment
-        # the emergency stop engages — see async_stop_all().
+        # Callbacks number entities register to reset their displayed
+        # value (e.g. an intensity slider back to 0) the moment a stop
+        # engages — see async_stop_all()/async_stop_device(). Called with
+        # a single argument: the affected slug, or None for "all devices"
+        # (a global stop). Entities compare that against their own slug.
         self._stop_listeners: list = []
 
     def add_stop_listener(self, callback) -> None:
         """Number entities register here so they visually reset to 0 as
-        soon as the emergency stop switch is engaged, instead of showing
-        a stale slider position until the next interaction."""
+        soon as a stop (global or per-device) is engaged, instead of
+        showing a stale slider position until the next interaction.
+        `callback` is invoked with one argument: the affected slug, or
+        None if every device is affected."""
         self._stop_listeners.append(callback)
 
     def add_new_device_listener(self, callback) -> None:
@@ -187,9 +195,12 @@ class ButtplugCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         """Devices belonging to `target` — a device slug, or "all"/"both"
         for everything. Re-evaluated fresh on every call (not cached), so
         it stays correct even if a device reconnects with a new object
-        instance mid-pattern."""
+        instance mid-pattern. Devices under a per-device stop are always
+        excluded here, even when `target` is "all"/"both" — this is what
+        makes a running "all" pattern automatically skip a toy the moment
+        its own stop switch engages, without any extra cancellation logic."""
         target = (target or "").strip().lower()
-        devs = self._devices()
+        devs = [d for d in self._devices() if bp.device_slug(d) not in self.per_slug_stopped]
         if target in ("all", "both", ""):
             return devs
         return [d for d in devs if bp.device_slug(d) == target]
@@ -222,9 +233,17 @@ class ButtplugCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         that "lovense_hush" and "all" are tracked as separate targets, so
         starting a pattern on "all" does not automatically cancel one
         already running on a specific device slug (matches the standalone
-        bridge's behaviour)."""
+        bridge's behaviour).
+
+        A specific device slug that's individually stopped refuses to
+        start at all here; a stopped device inside an "all"/"both" pattern
+        is instead silently excluded on every tick by _devices_matching()
+        — the pattern still starts and runs for the other devices."""
         if self.stopped:
             _LOGGER.warning("Ignoring start_pattern for %s: stop switch is on", target)
+            return
+        if target in self.per_slug_stopped:
+            _LOGGER.warning("Ignoring start_pattern for %s: device stop switch is on", target)
             return
         await self._cancel_pattern(target)
         self._prune_finished_patterns()
@@ -247,11 +266,14 @@ class ButtplugCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         return entry["device"] if entry else None
 
     async def async_apply_intensity(self, slug: str, percent: float) -> bool:
-        """percent is 0-100. Refuses while the stop switch is on — this is
-        the actual gate, not just a one-off stop at the moment the switch
-        was flipped."""
+        """percent is 0-100. Refuses while the global stop switch OR this
+        specific device's own stop switch is on — a real gate, not just a
+        one-off stop at the moment either switch was flipped."""
         if self.stopped:
             _LOGGER.warning("Ignoring intensity command for %s: stop switch is on", slug)
+            return False
+        if slug in self.per_slug_stopped:
+            _LOGGER.warning("Ignoring intensity command for %s: device stop switch is on", slug)
             return False
         # A direct intensity command overrides any pattern running on this
         # exact target, same as the standalone bridge's /speed endpoint.
@@ -262,9 +284,13 @@ class ButtplugCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         return await bp.apply_intensity(dev, percent / 100.0)
 
     async def async_apply_position(self, slug: str, percent: float, duration_ms: int = 0) -> bool:
-        """percent is 0-100. Refuses while the stop switch is on."""
+        """percent is 0-100. Refuses while the global stop switch OR this
+        specific device's own stop switch is on."""
         if self.stopped:
             _LOGGER.warning("Ignoring position command for %s: stop switch is on", slug)
+            return False
+        if slug in self.per_slug_stopped:
+            _LOGGER.warning("Ignoring position command for %s: device stop switch is on", slug)
             return False
         dev = self.get_device(slug)
         if dev is None:
@@ -272,8 +298,8 @@ class ButtplugCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         return await bp.send_position(dev, percent / 100.0, duration_ms)
 
     async def async_stop_all(self) -> None:
-        """Stops every toy immediately and engages the gate: subsequent
-        calls to async_apply_intensity/async_apply_position/
+        """Stops every toy immediately and engages the global gate:
+        subsequent calls to async_apply_intensity/async_apply_position/
         async_start_pattern are refused until async_clear_stop() is
         called (i.e. the stop switch is turned off again). Also notifies
         any registered stop listeners (the intensity/position number
@@ -284,13 +310,33 @@ class ButtplugCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         for dev in self._devices():
             await bp.stop_device(dev)
         for callback in self._stop_listeners:
-            callback()
+            callback(None)
 
     def async_clear_stop(self) -> None:
-        """Turns the gate back off (does not resume anything by itself —
-        the next explicit command from an entity/service is what moves
-        a toy again)."""
+        """Turns the global gate back off (does not resume anything by
+        itself — the next explicit command from an entity/service is what
+        moves a toy again)."""
         self.stopped = False
+
+    async def async_stop_device(self, slug: str) -> None:
+        """Stops a single toy immediately and engages a per-device gate:
+        subsequent commands targeting just this slug are refused until
+        async_clear_device_stop() is called. Also cancels any pattern
+        running specifically on this device's own slug (a pattern running
+        on "all"/"both" instead just silently stops including this device
+        on its next tick, via _devices_matching()) and notifies stop
+        listeners scoped to this slug so its own sliders reset to 0."""
+        self.per_slug_stopped.add(slug)
+        await self._cancel_pattern(slug)
+        dev = self.get_device(slug)
+        if dev is not None:
+            await bp.stop_device(dev)
+        for callback in self._stop_listeners:
+            callback(slug)
+
+    def async_clear_device_stop(self, slug: str) -> None:
+        """Turns a single device's gate back off."""
+        self.per_slug_stopped.discard(slug)
 
     async def async_shutdown_client(self) -> None:
         for t in list(self._active_patterns.keys()):

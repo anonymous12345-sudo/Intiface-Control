@@ -146,3 +146,67 @@ async def test_stop_switch_blocks_slider_commands_while_on(hass, setup_entry, fa
         blocking=True,
     )
     assert dev.sent == [(bp.VIBRATE, (0.7,))], "command should work again once unstopped"
+
+
+@pytest.mark.asyncio
+async def test_enable_switch_defaults_on(hass, setup_entry, fake_device) -> None:
+    coordinator = hass.data[DOMAIN][setup_entry.entry_id]
+    coordinator._bp_client.devices = {0: fake_device("Lovense Hush", outputs={bp.VIBRATE})}
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert hass.states.get("switch.lovense_hush_enabled").state == "on"
+
+
+@pytest.mark.asyncio
+async def test_disabling_one_device_does_not_affect_another(hass, setup_entry, fake_device) -> None:
+    coordinator = hass.data[DOMAIN][setup_entry.entry_id]
+    hush = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    hismith = fake_device("Hismith Sex Machine", outputs={bp.OSCILLATE})
+    coordinator._bp_client.devices = {0: hush, 1: hismith}
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        "number", "set_value",
+        {"entity_id": "number.lovense_hush_intensity", "value": 60},
+        blocking=True,
+    )
+    hush.sent.clear()
+
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": "switch.lovense_hush_enabled"}, blocking=True
+    )
+
+    assert hass.states.get("switch.lovense_hush_enabled").state == "off"
+    assert hush.sent[-1] == ("STOP", None)
+    assert hass.states.get("number.lovense_hush_intensity").state == "0.0"
+
+    # The other device, and the global stop switch, are untouched.
+    assert hass.states.get("switch.hismith_sex_machine_enabled").state == "on"
+    assert hass.states.get("switch.stop_all_toys").state == "off"
+
+    # The disabled device refuses commands...
+    hush.sent.clear()
+    await hass.services.async_call(
+        "number", "set_value",
+        {"entity_id": "number.lovense_hush_intensity", "value": 80},
+        blocking=True,
+    )
+    assert hush.sent == []
+
+    # ...while the other device keeps working normally.
+    ok = await coordinator.async_apply_intensity("hismith_sex_machine", 45)
+    assert ok is True
+
+    # Re-enabling restores normal operation.
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": "switch.lovense_hush_enabled"}, blocking=True
+    )
+    assert hass.states.get("switch.lovense_hush_enabled").state == "on"
+    await hass.services.async_call(
+        "number", "set_value",
+        {"entity_id": "number.lovense_hush_intensity", "value": 30},
+        blocking=True,
+    )
+    assert hush.sent[-1] == (bp.VIBRATE, (0.3,))

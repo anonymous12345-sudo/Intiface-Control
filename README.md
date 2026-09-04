@@ -57,6 +57,7 @@ For every connected toy, grouped under one Home Assistant **device**:
 | `number` — Position | Device supports Position or PositionWithDuration | 0–100% slider for linear devices (e.g. a stroker). Moves immediately; no in-UI duration control in this version. |
 | `binary_sensor` — Connected | Always | Reflects whether the toy is currently reachable through Intiface. |
 | `sensor` — Battery | Device reports a battery level | Battery percentage. |
+| `switch` — Enabled | Always | On (the default) means this toy responds normally; turning it off immediately stops it and refuses further commands until switched back on. See [The emergency stop switch](#the-emergency-stop-switch) below. |
 
 Plus, once per Home Assistant config entry (i.e. once per Intiface
 server you've connected):
@@ -143,27 +144,47 @@ Intiface Central).
 
 ## The emergency stop switch
 
-There's one `switch` entity per config entry (not per toy):
-**"Stop all toys."**
+There are two kinds of stop switch, both with the same gate semantics —
+turning one off doesn't just stop something once, it also **refuses
+further commands** until turned back on:
+
+**`switch.stop_all_toys`** — one per config entry, affects every
+connected toy.
 
 - **Turning it on** immediately stops every connected toy, cancels any
-  running pattern, and — importantly — **blocks all further control
-  commands** (intensity, position, and starting new patterns) until
-  you turn it back off. It's a real gate, not a one-off action: you
-  can't accidentally "un-stop" things by nudging a slider while it's
-  engaged. All the intensity/position sliders also visually reset to
-  0 the moment it's turned on, so the dashboard doesn't keep showing a
-  stale value the toy isn't actually at anymore.
+  running pattern, and blocks all further control commands (intensity,
+  position, and starting new patterns) to every toy until you turn it
+  back off. You can't accidentally "un-stop" things by nudging a slider
+  while it's engaged. All the intensity/position sliders also visually
+  reset to 0 the moment it's turned on, so the dashboard doesn't keep
+  showing a stale value no toy is actually at anymore.
 - **Turning it off** clears that block. It does not resume anything by
   itself — the next slider move or service call is what starts a toy
   again.
 
-This is designed to be used the same way people commonly used an
-`input_boolean` "abort" helper with the old REST-bridge-based setup:
-as a state you can check in automation/script conditions (`state:
-'off'` required to proceed) — except this one actually does something
-when you flip it, instead of only being a flag other automations had
-to react to.
+**`switch.<toy>_enabled`** — one per toy, framed the other way round as
+normal availability rather than a stop button.
+
+- **On** (the default for a newly connected toy) means it responds to
+  commands normally.
+- **Turning it off** immediately stops that one toy, cancels any pattern
+  running specifically on it, and refuses further commands to it — same
+  gate mechanism as the global switch, just scoped to one device and
+  inverted so a toy is usable right away rather than needing to be
+  un-stopped first. If a background pattern is running on `all`/`both`,
+  the disabled toy is silently excluded from it (the pattern keeps
+  running normally for every other toy) without needing to restart
+  anything.
+- The two gates are fully independent: disabling one toy doesn't affect
+  any other toy or the global switch, and the global switch stopping
+  everything doesn't change any toy's own Enabled state.
+
+Both switch types are designed to be used the same way people commonly
+used an `input_boolean` "abort" helper with the old REST-bridge-based
+setup: as a state you can check in automation/script conditions (`state:
+'off'` required to proceed) — except these actually do something when
+you flip them, instead of only being a flag other automations had to
+react to.
 
 ## Patterns (wave / pulse)
 
@@ -287,10 +308,6 @@ under **Settings → Devices & services → Intiface Control**.
   coordinator supports it (`async_apply_position(slug, percent,
   duration_ms)`), it's just not exposed as a service or a second
   entity yet.
-- One "stop all" switch per config entry, not per device. There's no
-  per-toy stop button in this version — use the emergency stop switch
-  (affects everything on that Intiface connection) or set a device's
-  own intensity/position slider back to 0.
 
 ## Releasing updates (for maintainers)
 
