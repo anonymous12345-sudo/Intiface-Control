@@ -199,7 +199,7 @@ async def test_disabled_device_refuses_wave_pattern_start(coordinator, fake_devi
     await coordinator.async_stop_device("lovense_hush")
     hush.sent.clear()
 
-    await coordinator.async_start_wave_pattern("lovense_hush", wave_duration=1, max_speed_percent=80)
+    await coordinator.async_start_wave_pattern("lovense_hush", duration=1, max_speed_percent=80)
     await asyncio.sleep(1.3)
 
     assert hush.sent == [], "a disabled device must refuse to start a pattern entirely"

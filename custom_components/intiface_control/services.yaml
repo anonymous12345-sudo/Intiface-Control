@@ -2,11 +2,16 @@ start_wave_pattern:
   name: Start wave pattern
   description: >-
     Runs a single wave (min_speed -> max_speed -> min_speed) on the
-    targeted toy/toys, optionally repeated.
-  target:
-    device:
-      integration: intiface_control
+    selected toy/toys, optionally repeated.
   fields:
+    device_id:
+      name: Toys
+      description: One or more toys to run the pattern on.
+      required: true
+      selector:
+        device:
+          integration: intiface_control
+          multiple: true
     repeat:
       name: Repeat
       description: How many times to repeat the single wave cycle.
@@ -48,11 +53,16 @@ start_pulse_pattern:
   name: Start pulse pattern
   description: >-
     Runs a single pulse (a low phase followed by a high phase) on the
-    targeted toy/toys, optionally repeated.
-  target:
-    device:
-      integration: intiface_control
+    selected toy/toys, optionally repeated.
   fields:
+    device_id:
+      name: Toys
+      description: One or more toys to run the pattern on.
+      required: true
+      selector:
+        device:
+          integration: intiface_control
+          multiple: true
     repeat:
       name: Repeat
       description: How many times to repeat the single pulse cycle.
@@ -102,7 +112,13 @@ start_pulse_pattern:
 
 stop_pattern:
   name: Stop pattern
-  description: Stops any running pattern on the targeted toy/toys.
-  target:
-    device:
-      integration: intiface_control
+  description: Stops any running pattern on the selected toy/toys.
+  fields:
+    device_id:
+      name: Toys
+      description: One or more toys to stop the pattern on.
+      required: true
+      selector:
+        device:
+          integration: intiface_control
+          multiple: true

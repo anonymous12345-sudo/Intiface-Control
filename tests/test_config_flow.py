@@ -89,7 +89,10 @@ async def test_options_flow_updates_url_and_reloads(hass) -> None:
             result["flow_id"], {CONF_URL: "ws://old:12345"}
         )
         entry = hass.config_entries.async_entries(DOMAIN)[0]
-        assert await hass.config_entries.async_setup(entry.entry_id)
+        # The flow already auto-sets-up a newly created entry — an
+        # explicit async_setup() call here would hit HA's own
+        # OperationNotAllowed guard against setting up an already-loaded
+        # entry, so just wait for that automatic setup to finish.
         await hass.async_block_till_done()
 
         options_result = await hass.config_entries.options.async_init(entry.entry_id)
@@ -117,7 +120,10 @@ async def test_options_flow_connection_failure_leaves_url_unchanged(hass) -> Non
             result["flow_id"], {CONF_URL: "ws://old:12345"}
         )
         entry = hass.config_entries.async_entries(DOMAIN)[0]
-        assert await hass.config_entries.async_setup(entry.entry_id)
+        # The flow already auto-sets-up a newly created entry — an
+        # explicit async_setup() call here would hit HA's own
+        # OperationNotAllowed guard against setting up an already-loaded
+        # entry, so just wait for that automatic setup to finish.
         await hass.async_block_till_done()
 
         options_result = await hass.config_entries.options.async_init(entry.entry_id)
