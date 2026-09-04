@@ -1,0 +1,8 @@
+# Test dependencies for the Intiface Control integration.
+# `buttplug` is included here (not just relying on manifest.json) so
+# tests run against the REAL library's enum names — see tests/test_client.py
+# for why that matters.
+pytest
+pytest-asyncio
+pytest-homeassistant-custom-component
+buttplug
