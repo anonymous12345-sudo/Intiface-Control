@@ -1,0 +1,7 @@
+[tool.ruff.lint]
+# BLE001 (blind `except Exception`) is intentional throughout this
+# integration: it talks to a third-party device library whose exact
+# exception types aren't part of any documented contract, so broadly
+# catching and logging is the correct way to keep one bad device or
+# connection attempt from crashing the whole integration.
+ignore = ["BLE001"]

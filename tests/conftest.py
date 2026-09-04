@@ -15,6 +15,33 @@ def enable_custom_integrations(enable_custom_integrations):
     yield
 
 
+class FakeDeviceOutputCommand:
+    """Stand-in for buttplug's real DeviceOutputCommand, used only so
+    FakeDevice.run_output() below can inspect what was sent.
+
+    Deliberately NOT the real class: our own client.py code never reads
+    attributes back off a DeviceOutputCommand instance (it just builds one
+    and hands it to dev.run_output()), so there was never a real
+    contract to test against there — .output_type/.values here are purely
+    our own test-observability convention, unrelated to whatever
+    attribute names the actual buttplug library happens to use
+    internally."""
+
+    def __init__(self, output_type, *values):
+        self.output_type = output_type
+        self.values = values
+
+
+@pytest.fixture(autouse=True)
+def _patch_device_output_command(monkeypatch):
+    """Every test that constructs a DeviceOutputCommand goes through
+    client.py's own reference to it, so patching it there is enough —
+    other modules never import DeviceOutputCommand directly."""
+    from custom_components.buttplug import client as bp_client
+
+    monkeypatch.setattr(bp_client, "DeviceOutputCommand", FakeDeviceOutputCommand)
+
+
 class FakeDevice:
     """A minimal stand-in for a buttplug device object, exposing exactly
     the surface our code touches (has_output/has_input/run_output/stop/
@@ -55,3 +82,4 @@ class FakeDevice:
 def fake_device():
     """Factory fixture: fake_device("Name", outputs={...}, battery=0.9)."""
     return FakeDevice
+
