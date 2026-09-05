@@ -585,3 +585,79 @@ async def test_rotation_respects_both_gates(coordinator, fake_device) -> None:
 
     ok = await coordinator.async_apply_rotation("rotator", -50)
     assert ok is True
+
+
+@pytest.mark.asyncio
+async def test_pattern_completion_notifies_stop_listeners(coordinator, fake_device) -> None:
+    """Regression test: a pattern that runs to completion on its own
+    (nobody explicitly stopped it) used to leave the number/light
+    entities showing a stale value from before the pattern started —
+    only an explicit stop reset them. The pattern's own natural end
+    must now trigger the same stop-listener notification."""
+    dev = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+
+    calls = []
+    coordinator.add_stop_listener(lambda affected_slug: calls.append(affected_slug))
+
+    await coordinator.async_start_wave_pattern(
+        "lovense_hush", repeat=1, min_speed_percent=10, max_speed_percent=90, duration=1
+    )
+    await asyncio.sleep(1.4)
+
+    assert calls == ["lovense_hush"], "a naturally-finished pattern must notify stop listeners exactly once"
+    assert "lovense_hush" not in coordinator._active_patterns, "the finished task must be cleaned up"
+
+
+@pytest.mark.asyncio
+async def test_cancelled_pattern_does_not_double_notify_or_race(coordinator, fake_device) -> None:
+    """The done-callback added for the fix above must not interfere with
+    the pre-existing cancellation flow: cancelling a pattern (e.g. via a
+    direct intensity command) must not ALSO fire a stray stop-listener
+    notification racing against whatever new value the cancelling code
+    is about to display."""
+    dev = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+
+    calls = []
+    coordinator.add_stop_listener(lambda affected_slug: calls.append(affected_slug))
+
+    await coordinator.async_start_wave_pattern(
+        "lovense_hush", repeat=1, min_speed_percent=0, max_speed_percent=90, duration=10
+    )
+    await asyncio.sleep(0.3)
+    await coordinator.async_apply_intensity("lovense_hush", 55)
+    assert dev.sent[-1] == (bp.VIBRATE, (0.55,))
+
+    await asyncio.sleep(0.5)  # give the (now-cancelled) task's done-callback every chance to fire
+    assert calls == [], "cancelling a pattern for a direct command must not trigger a stop-listener notification"
+
+
+@pytest.mark.asyncio
+async def test_position_duration_persists_across_a_new_coordinator_for_the_same_entry(
+    hass, mock_bp_client, fake_device
+) -> None:
+    """Regression test: position duration used to be pure in-memory
+    coordinator state, reset to 0 the moment the coordinator was
+    recreated (e.g. a Home Assistant restart, or a reload triggered by
+    the options flow's URL change) — it's now persisted on the config
+    entry's own options."""
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={CONF_URL: "ws://fake:12345", CONF_FALLBACK_URL: None}
+    )
+    entry.add_to_hass(hass)
+
+    coord1 = IntifaceCoordinator(hass, entry)
+    coord1._bp_client = FakeButtplugClient("test")
+    coord1._bp_client.devices = {0: fake_device("Simulated Stroker", outputs={bp.POSITION})}
+    await coord1.async_refresh()
+    coord1.async_set_position_duration("simulated_stroker", 2500)
+
+    assert entry.options.get("position_duration_ms") == {"simulated_stroker": 2500}
+
+    # A brand-new coordinator for the SAME entry (simulating a restart
+    # or reload) must restore this from entry.options, not start at 0.
+    coord2 = IntifaceCoordinator(hass, entry)
+    assert coord2.get_position_duration("simulated_stroker") == 2500

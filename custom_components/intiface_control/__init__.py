@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry

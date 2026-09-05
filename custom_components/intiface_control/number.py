@@ -51,7 +51,10 @@ class IntifaceIntensityNumber(CoordinatorEntity[IntifaceCoordinator], NumberEnti
         self._attr_unique_id = f"{entry_id}_{slug}_intensity"
         self._attr_device_info = _device_info(entry_id, slug, name)
         self._attr_native_value = 0.0
-        coordinator.add_stop_listener(self._on_stop)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(self.coordinator.add_stop_listener(self._on_stop))
 
     def _on_stop(self, affected_slug: str | None) -> None:
         """Called by the coordinator when a stop (global or per-device)
@@ -103,7 +106,10 @@ class IntifaceRotationNumber(CoordinatorEntity[IntifaceCoordinator], NumberEntit
         self._attr_unique_id = f"{entry_id}_{slug}_rotation"
         self._attr_device_info = _device_info(entry_id, slug, name)
         self._attr_native_value = 0.0
-        coordinator.add_stop_listener(self._on_stop)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(self.coordinator.add_stop_listener(self._on_stop))
 
     def _on_stop(self, affected_slug: str | None) -> None:
         """See IntifaceIntensityNumber._on_stop() above."""
@@ -141,7 +147,10 @@ class IntifacePositionNumber(CoordinatorEntity[IntifaceCoordinator], NumberEntit
         self._attr_unique_id = f"{entry_id}_{slug}_position"
         self._attr_device_info = _device_info(entry_id, slug, name)
         self._attr_native_value = 0.0
-        coordinator.add_stop_listener(self._on_stop)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(self.coordinator.add_stop_listener(self._on_stop))
 
     def _on_stop(self, affected_slug: str | None) -> None:
         """See IntifaceIntensityNumber._on_stop() above."""
@@ -167,7 +176,12 @@ class IntifacePositionDurationNumber(CoordinatorEntity[IntifaceCoordinator], Num
     live toy command by itself — moving this slider alone never sends
     anything to the device. Not reset by the emergency-stop gates: it
     doesn't move anything, and a stopped device already refuses
-    position commands regardless of whatever duration is set here."""
+    position commands regardless of whatever duration is set here.
+    Persisted on the config entry (see
+    IntifaceCoordinator.async_set_position_duration()), so its value
+    survives a Home Assistant restart instead of silently resetting to
+    0 — restored here from the coordinator's own already-loaded value
+    rather than always starting at 0."""
 
     _attr_native_min_value = 0
     _attr_native_max_value = 10
@@ -183,7 +197,7 @@ class IntifacePositionDurationNumber(CoordinatorEntity[IntifaceCoordinator], Num
         self._slug = slug
         self._attr_unique_id = f"{entry_id}_{slug}_position_duration"
         self._attr_device_info = _device_info(entry_id, slug, name)
-        self._attr_native_value = 0.0
+        self._attr_native_value = coordinator.get_position_duration(slug) / 1000.0
 
     @property
     def available(self) -> bool:

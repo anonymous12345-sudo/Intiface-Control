@@ -58,7 +58,7 @@ For every connected toy, grouped under one Home Assistant **device**:
 | `number` — Intensity | Device supports vibrate, oscillate, constrict, temperature, or spray | 0–100% slider. Automatically uses whichever of those output types the device actually supports. |
 | `number` — Rotation | Device supports rotate | -100–100 signed slider — positive is clockwise, negative counter-clockwise, 0 is stopped. Kept separate from Intensity above since buttplug documents Rotate's range as signed specifically to represent direction, which a 0-100% slider can't express. |
 | `number` — Position | Device supports Position or PositionWithDuration | 0–100% slider for linear devices (e.g. a stroker). Uses whatever duration is set on the companion "Position duration" entity below (0/instant if that's never been touched). |
-| `number` — Position duration | Same as Position above | 0–10 second slider controlling how long the Position slider's *next* move takes. A stored preference, not a toy command by itself — moving only this slider never sends anything to the device. |
+| `number` — Position duration | Same as Position above | 0–10 second slider controlling how long the Position slider's *next* move takes. A stored preference, not a toy command by itself — moving only this slider never sends anything to the device. Persisted on the config entry, so it survives a Home Assistant restart instead of resetting to 0. |
 | `light` — LED | Device supports Led | Brightness-only light control. Modeled as a real Home Assistant light (not another generic slider), since that's the idiomatic representation for a light. |
 | `binary_sensor` — Connected | Always | Reflects whether the toy is currently reachable through Intiface. |
 | `sensor` — Battery | Device reports a battery level | Battery percentage, polled every 60s (independently of the general 5s device refresh) — a level that only moves over hours doesn't need a network round-trip every cycle. A newly connected (or reconnected) device always gets its first reading immediately, never waiting out that interval. |
@@ -285,6 +285,11 @@ Notes:
   that specific toy's own Enabled switch, is off/on respectively — a
   disabled toy simply refuses to start a pattern at all, rather than
   silently being excluded from one running on other toys.
+- When a pattern finishes on its own (runs out its full repeat count,
+  nobody stopped it early), its toy's Intensity/Rotation/Position
+  sliders reset to 0 automatically, matching what the toy itself
+  already did — not just when an emergency stop or a service call ends
+  it early.
 
 ## Adding new toys
 

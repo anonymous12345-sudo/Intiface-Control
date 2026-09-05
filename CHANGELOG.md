@@ -6,6 +6,32 @@ All notable changes to this project are documented here, per release.
 
 - Nothing yet.
 
+## [0.3.3]
+
+### Fixed
+
+- **Position duration is now persistent.** It used to be pure in-memory
+  coordinator state — a Home Assistant restart, or a reload triggered
+  by the options flow's URL change, silently reset it back to 0 with
+  no indication why. Now stored on the config entry's own options and
+  restored on load.
+- **A pattern that finishes on its own now resets its toy's sliders.**
+  Only an explicit stop (the emergency switch, the per-toy Enabled
+  switch, or the `stop_pattern` service) used to reset the displayed
+  Intensity/Rotation/Position value back to 0 — a pattern running out
+  its full repeat count naturally left the slider showing a stale
+  value from before it started, even though the toy itself had already
+  stopped. Implemented carefully around the existing pattern-
+  cancellation race-condition fix: cancelling a pattern for a new
+  command still shows that new value, not a stray reset.
+
+### Changed
+
+- Number/light entities now register their stop-listener from
+  `async_added_to_hass()` (with a matching automatic unregister on
+  removal) instead of at construction time, so a removed or reloaded
+  entity doesn't keep a live listener registered against it.
+
 ## [0.3.2]
 
 ### Fixed

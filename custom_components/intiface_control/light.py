@@ -44,7 +44,10 @@ class IntifaceLed(CoordinatorEntity[IntifaceCoordinator], LightEntity):
         )
         self._attr_is_on = False
         self._attr_brightness = 255
-        coordinator.add_stop_listener(self._on_stop)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(self.coordinator.add_stop_listener(self._on_stop))
 
     def _on_stop(self, affected_slug: str | None) -> None:
         """Same reasoning as the number entities' _on_stop(): don't keep

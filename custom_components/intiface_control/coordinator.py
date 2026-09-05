@@ -77,9 +77,13 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # Not touched by the emergency-stop gates below: it doesn't move
         # anything by itself, only async_apply_position() does, and that
         # already goes through the same gate checks as every other
-        # command. Missing/unset means 0 (instant move, the previous,
-        # only behaviour before this existed).
-        self.position_duration_ms: dict[str, int] = {}
+        # command. Restored from the config entry's own options (see
+        # async_set_position_duration below) so it survives a Home
+        # Assistant restart/reload instead of silently resetting to 0 —
+        # missing/never-set still means 0 (instant move).
+        self.position_duration_ms: dict[str, int] = dict(
+            entry.options.get("position_duration_ms", {})
+        )
 
         # True while the emergency-stop switch is on. Acts as a real gate:
         # every control method below refuses to send anything while this
@@ -103,18 +107,35 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # (a global stop). Entities compare that against their own slug.
         self._stop_listeners: list = []
 
-    def add_stop_listener(self, callback) -> None:
-        """Number entities register here so they visually reset to 0 as
-        soon as a stop (global or per-device) is engaged, instead of
-        showing a stale slider position until the next interaction.
+    def add_stop_listener(self, callback):
+        """Number/light entities register here so they visually reset to
+        0/off as soon as a stop (global or per-device) is engaged, or a
+        pattern finishes on its own, instead of showing a stale value.
         `callback` is invoked with one argument: the affected slug, or
-        None if every device is affected."""
+        None if every device is affected. Returns an unsubscribe
+        function — entities should call it via `self.async_on_remove()`
+        from `async_added_to_hass()` so the listener doesn't keep
+        referencing an entity that's since been removed."""
         self._stop_listeners.append(callback)
 
-    def add_new_device_listener(self, callback) -> None:
+        def _unsubscribe() -> None:
+            if callback in self._stop_listeners:
+                self._stop_listeners.remove(callback)
+
+        return _unsubscribe
+
+    def add_new_device_listener(self, callback):
         """Platforms register here to be notified about newly discovered
-        devices, so they can create entities for them dynamically."""
+        devices, so they can create entities for them dynamically.
+        Returns an unsubscribe function, same as add_stop_listener()
+        above."""
         self._new_device_listeners.append(callback)
+
+        def _unsubscribe() -> None:
+            if callback in self._new_device_listeners:
+                self._new_device_listeners.remove(callback)
+
+        return _unsubscribe
 
     def _devices(self) -> list:
         if self._bp_client is None:
@@ -290,7 +311,15 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         cancellation — the pattern's finally-block stop_device() call
         runs later, asynchronously. Without waiting for it here, a
         direct intensity command issued right after cancelling could
-        race against that pending stop and get silently overwritten."""
+        race against that pending stop and get silently overwritten.
+
+        Pops from _active_patterns *before* awaiting, deliberately: this
+        is what lets _on_pattern_task_done() below tell a genuine
+        natural completion apart from a cancellation that's about to be
+        superseded by something else — by the time this task's done
+        callback fires, it's already gone from _active_patterns, so that
+        callback correctly does nothing instead of racing whatever new
+        value this cancellation is about to make way for."""
         task = self._active_patterns.pop(slug, None)
         if task is not None and not task.done():
             task.cancel()
@@ -301,9 +330,38 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             except Exception:
                 _LOGGER.debug("Pattern task for %s raised during cancellation", slug, exc_info=True)
 
+    def _on_pattern_task_done(self, slug: str, task: asyncio.Task) -> None:
+        """Registered via task.add_done_callback() when a pattern starts.
+        Fires for every way a pattern task can end — finishing all its
+        repeats naturally, being cancelled, or raising unexpectedly.
+
+        Only actually resets the display for a *natural* completion:
+        if this exact task is still the one tracked in _active_patterns
+        for this slug, nothing else has superseded it (a cancellation
+        via _cancel_pattern() above already pops the entry first, before
+        awaiting), so the toy really did just stop on its own — the
+        number/light entities for this slug should stop showing a stale
+        value from before the pattern started, matching what the
+        pattern's own finally-block already did to the actual device.
+        If something else already claimed this slug (a new pattern, or
+        a direct command that cancelled this one), this is a stale
+        notification for a task nobody's tracking anymore and must do
+        nothing, or it would race whatever that newer command is about
+        to display instead."""
+        if self._active_patterns.get(slug) is task:
+            self._active_patterns.pop(slug, None)
+            for callback in self._stop_listeners:
+                callback(slug)
+
     def _prune_finished_patterns(self) -> None:
-        for t in [t for t, task in self._active_patterns.items() if task.done()]:
-            self._active_patterns.pop(t, None)
+        """Same "only the first to notice cleans up" logic as
+        _on_pattern_task_done() above — whichever of the two runs first
+        for a given slug is the one that resets the display; the other
+        finds nothing left to do."""
+        for slug in [s for s, task in self._active_patterns.items() if task.done()]:
+            self._active_patterns.pop(slug, None)
+            for callback in self._stop_listeners:
+                callback(slug)
 
     async def async_start_wave_pattern(
         self,
@@ -335,6 +393,7 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 duration,
             )
         )
+        task.add_done_callback(lambda t, s=slug: self._on_pattern_task_done(s, t))
         self._active_patterns[slug] = task
 
     async def async_start_pulse_pattern(
@@ -369,6 +428,7 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 high_duration,
             )
         )
+        task.add_done_callback(lambda t, s=slug: self._on_pattern_task_done(s, t))
         self._active_patterns[slug] = task
 
     async def async_stop_pattern(self, slug: str) -> None:
@@ -434,8 +494,18 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     def async_set_position_duration(self, slug: str, duration_ms: int) -> None:
         """Stores the preferred move duration for a slug — purely a
         setting for the next async_apply_position() call, doesn't move
-        or command the device by itself."""
+        or command the device by itself. Persisted to the config
+        entry's own options, so it survives a Home Assistant restart
+        or a reload (e.g. from the options flow's URL change) instead
+        of silently resetting to 0."""
         self.position_duration_ms[slug] = duration_ms
+        self.hass.config_entries.async_update_entry(
+            self.config_entry,
+            options={
+                **self.config_entry.options,
+                "position_duration_ms": dict(self.position_duration_ms),
+            },
+        )
 
     async def async_apply_position(self, slug: str, percent: float, duration_ms: int | None = None) -> bool:
         """percent is 0-100. Refuses while the global stop switch OR this
