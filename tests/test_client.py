@@ -248,11 +248,14 @@ async def test_apply_rotation_forwards_positive_and_negative_unchanged(fake_devi
 
 
 @pytest.mark.asyncio
-async def test_apply_rotation_zero_stops_device(fake_device) -> None:
+async def test_apply_rotation_zero_targets_rotate_not_full_stop(fake_device) -> None:
+    """Same fix as test_apply_intensity_zero_targets_vibrate_not_full_stop
+    above: rotation reaching exactly 0 now zeroes out the ROTATE output
+    specifically, not a full device-wide stop_device() call."""
     dev = fake_device("Rotator", outputs={bp.ROTATE})
     ok = await bp.apply_rotation(dev, 0.0)
     assert ok is True
-    assert dev.sent[-1] == ("STOP", None)
+    assert dev.sent[-1] == (bp.ROTATE, (0.0,))
 
 
 def test_rotate_is_not_folded_into_intensity_priority() -> None:
