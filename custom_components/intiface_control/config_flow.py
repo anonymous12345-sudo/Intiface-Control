@@ -139,7 +139,17 @@ class IntifaceOptionsFlow(config_entries.OptionsFlow):
                         self.config_entry, data=new_data, unique_id=url
                     )
                     await self.hass.config_entries.async_reload(self.config_entry.entry_id)
-                    return self.async_create_entry(title="", data={})
+                    # Completing an options flow REPLACES config_entry.options
+                    # wholesale with whatever's passed here — not a merge.
+                    # This flow only ever touches entry.data (the URL) and
+                    # never reads or writes entry.options itself, but other
+                    # state does live there (position-duration preferences,
+                    # see IntifaceCoordinator.async_set_position_duration()).
+                    # Passing {} here would silently wipe that out the next
+                    # time anything reloads or restarts, even though this
+                    # flow never touched it — echo back whatever's already
+                    # there instead of blowing it away.
+                    return self.async_create_entry(title="", data=dict(self.config_entry.options))
 
         current = self.config_entry.data
         schema = vol.Schema(

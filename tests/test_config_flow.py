@@ -251,3 +251,44 @@ async def test_setup_succeeds_if_only_the_fallback_url_is_reachable(hass) -> Non
         )
 
     assert result["type"] == FlowResultType.CREATE_ENTRY
+
+
+@pytest.mark.asyncio
+async def test_options_flow_url_change_does_not_wipe_other_options(hass) -> None:
+    """Regression test: completing an options flow REPLACES
+    config_entry.options wholesale with whatever data is passed to
+    async_create_entry() — not a merge. This flow only manages the URL
+    (stored in entry.data), but other state lives in entry.options too
+    (position-duration preferences, see
+    IntifaceCoordinator.async_set_position_duration()). Passing an empty
+    dict here used to silently wipe that out the moment anything else
+    reloaded or Home Assistant restarted, even though this flow never
+    touched it."""
+    with patch(
+        "custom_components.intiface_control.config_flow._test_connection",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_URL: "ws://old:12345"}
+        )
+        entry = hass.config_entries.async_entries(DOMAIN)[0]
+        await hass.async_block_till_done()
+
+        # Simulate a position-duration preference already having been
+        # saved, the same way the coordinator itself would.
+        hass.config_entries.async_update_entry(
+            entry, options={"position_duration_ms": {"simulated_stroker": 2500}}
+        )
+
+        options_result = await hass.config_entries.options.async_init(entry.entry_id)
+        await hass.config_entries.options.async_configure(
+            options_result["flow_id"], {CONF_URL: "ws://new:12345"}
+        )
+        await hass.async_block_till_done()
+
+    assert entry.options.get("position_duration_ms") == {"simulated_stroker": 2500}, (
+        f"position_duration_ms must survive a URL change via the options flow, got {entry.options}"
+    )

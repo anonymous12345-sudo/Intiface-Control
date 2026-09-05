@@ -6,6 +6,20 @@ All notable changes to this project are documented here, per release.
 
 - Nothing yet.
 
+## [0.3.7]
+
+### Fixed
+
+- **Changing the URL via the options flow used to silently wipe the
+  saved position-duration preference.** Completing an options flow
+  replaces `config_entry.options` wholesale with whatever's passed to
+  it — not a merge — and this flow was passing an empty dict on
+  success. The position-duration reload right before that point still
+  picked up the correct value (so nothing looked wrong immediately),
+  but the next reload or Home Assistant restart after that would show
+  0 again, with no indication why. The flow now echoes back whatever
+  was already in `entry.options` instead of discarding it.
+
 ## [0.3.6]
 
 ### Fixed
