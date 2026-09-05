@@ -376,7 +376,11 @@ If two connected toys happen to share the same name (e.g. two of the
 same model), they're automatically disambiguated by appending their
 Intiface device index (`lovense_hush_0`, `lovense_hush_1`) instead of
 colliding into a single entity. A lone toy is never affected by this —
-only an actual name collision changes anything.
+only an actual name collision changes anything. Once assigned, this
+disambiguation sticks for the rest of the Home Assistant session: one
+of the two disconnecting doesn't cause the other to revert to the
+plain, unsuffixed name (which used to happen, and would have changed
+that toy's entity IDs out from under it every time).
 
 ## Known limitations
 
@@ -409,10 +413,15 @@ only an actual name collision changes anything.
   underlying Python library even supports one) rather than being added
   onto the existing pattern.
 - The index-based disambiguation for same-named toys (see
-  Troubleshooting above) isn't guaranteed stable across a full Intiface
-  restart — indices are assigned in connection order, which could in
-  principle shift which of two identically-named toys gets which
-  suffix. Toys with distinct names are unaffected.
+  Troubleshooting above) is now persistent for as long as Home
+  Assistant keeps running (a device that's been assigned a slug keeps
+  it, even across it disconnecting and reconnecting, or another
+  same-named device coming and going around it) — but isn't guaranteed
+  stable across a full Home Assistant restart or Intiface restart:
+  indices are assigned in connection order, which could in principle
+  shift which of two identically-named toys gets which suffix on the
+  very first refresh after either restarts. Toys with distinct names
+  are unaffected either way.
 
 ## Releasing updates (for maintainers)
 

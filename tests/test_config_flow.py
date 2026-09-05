@@ -221,3 +221,33 @@ async def test_options_flow_refuses_url_already_used_by_another_entry(hass) -> N
     assert options_result["type"] == FlowResultType.FORM
     assert options_result["errors"] == {"base": "already_configured"}
     assert second_entry.data[CONF_URL] == "ws://second:12345", "the refused change must not have been applied"
+
+
+@pytest.mark.asyncio
+async def test_setup_succeeds_if_only_the_fallback_url_is_reachable(hass) -> None:
+    """Regression test: the config flow used to test only the primary
+    URL, even though the coordinator's own runtime connection logic
+    (IntifaceCoordinator._ensure_client()) tries the fallback URL too.
+    A primary/fallback pair that would work fine once running used to
+    be rejected at setup time — an inconsistency between what setup
+    allows and what runtime actually does."""
+
+    async def fake_test_connection(url, fallback_url=None):
+        if "unreachable" in url:
+            if fallback_url and "unreachable" not in fallback_url:
+                return
+            raise ConnectionError("nope")
+
+    with patch(
+        "custom_components.intiface_control.config_flow._test_connection",
+        new=AsyncMock(side_effect=fake_test_connection),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"],
+            {CONF_URL: "ws://unreachable:12345", "fallback_url": "ws://192.168.1.50:12345"},
+        )
+
+    assert result["type"] == FlowResultType.CREATE_ENTRY

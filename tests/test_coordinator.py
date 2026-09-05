@@ -664,3 +664,72 @@ async def test_position_duration_persists_across_a_new_coordinator_for_the_same_
     # or reload) must restore this from entry.options, not start at 0.
     coord2 = IntifaceCoordinator(hass, entry)
     assert coord2.get_position_duration("simulated_stroker") == 2500
+
+
+@pytest.mark.asyncio
+async def test_slug_survives_the_other_colliding_device_disconnecting(coordinator, fake_device) -> None:
+    """The core lifecycle bug: two same-named devices get disambiguated
+    (_0/_1), but recomputing collisions fresh every refresh meant the
+    survivor's slug reverted to the plain, unsuffixed form the moment
+    the other one disconnected — changing its entity identity even
+    though nothing happened to it. Disambiguation must now be
+    persistent for the coordinator's lifetime, not recomputed from only
+    the currently-connected set."""
+    hush_a = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    hush_a.index = 0
+    hush_b = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    hush_b.index = 1
+    coordinator._bp_client.devices = {0: hush_a, 1: hush_b}
+    await coordinator.async_refresh()
+    assert set(coordinator.data) == {"lovense_hush_0", "lovense_hush_1"}
+
+    coordinator._bp_client.devices = {1: hush_b}
+    await coordinator.async_refresh()
+    assert "lovense_hush_1" in coordinator.data, (
+        f"the surviving device must keep its disambiguated slug, got {list(coordinator.data)}"
+    )
+    assert "lovense_hush" not in coordinator.data, "must not revert to the plain, unsuffixed slug"
+
+
+@pytest.mark.asyncio
+async def test_slug_assignment_is_order_independent_across_reconnects(coordinator, fake_device) -> None:
+    hush_a = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    hush_a.index = 0
+    hush_b = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    hush_b.index = 1
+    coordinator._bp_client.devices = {0: hush_a, 1: hush_b}
+    await coordinator.async_refresh()
+
+    # Both drop, B reconnects first (before A), in a different order
+    # than either was originally seen in.
+    coordinator._bp_client.devices = {}
+    await coordinator.async_refresh()
+    coordinator._bp_client.devices = {1: hush_b}
+    await coordinator.async_refresh()
+    assert "lovense_hush_1" in coordinator.data
+
+    coordinator._bp_client.devices = {0: hush_a, 1: hush_b}
+    await coordinator.async_refresh()
+    assert set(coordinator.data) == {"lovense_hush_0", "lovense_hush_1"}, (
+        "reconnecting in a different order must not reshuffle either device's slug"
+    )
+
+
+@pytest.mark.asyncio
+async def test_lone_device_that_never_collided_keeps_the_plain_slug_across_reconnects(
+    coordinator, fake_device
+) -> None:
+    """A device that's never shared a name with anything else must keep
+    its plain slug across a disconnect/reconnect too — the persistence
+    fix shouldn't start suffixing devices that were never ambiguous."""
+    dev = fake_device("Hismith Sex Machine", outputs={bp.OSCILLATE})
+    dev.index = 0
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+    assert list(coordinator.data) == ["hismith_sex_machine"]
+
+    coordinator._bp_client.devices = {}
+    await coordinator.async_refresh()
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+    assert list(coordinator.data) == ["hismith_sex_machine"]

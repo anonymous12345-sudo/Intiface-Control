@@ -42,6 +42,17 @@ def _connection_issue_id(entry_id: str) -> str:
     return f"cannot_connect_{entry_id}"
 
 
+def _clamp(value: float, lo: float, hi: float) -> float:
+    """HA's own number entities already enforce their declared min/max
+    before calling into these coordinator methods, but the methods
+    themselves are reachable more directly too (a service call, a
+    future automation-facing API) — clamping here as well means an
+    out-of-range value (e.g. percent=150) can never reach the device as
+    something outside the range it was ever meant to represent, no
+    matter how it got here."""
+    return max(lo, min(hi, value))
+
+
 class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     """Coordinates the Intiface connection and the list of known devices."""
 
@@ -97,6 +108,23 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # Slugs we've ever seen — lets platforms distinguish "brand new
         # device this cycle" from "device we already made entities for".
         self.known_slugs: set[str] = set()
+
+        # Persistent slug assignment for the lifetime of this
+        # coordinator (this HA session) — see the top of
+        # _async_update_data() below for the full reasoning. Keyed by
+        # (name-derived base slug, device index or a same-cycle
+        # fallback identity), so a device that's already been assigned
+        # a slug keeps that exact slug on every later refresh, even
+        # across it disconnecting and reconnecting, or another
+        # same-named device coming and going around it.
+        self._slug_assignments: dict[tuple[str, Any], str] = {}
+        # Base slugs (pre-disambiguation, e.g. "lovense_hush") that have
+        # ever collided this session. Once a name has collided even
+        # once, it never goes back to handing out the plain, unsuffixed
+        # slug — otherwise the one surviving device after the other
+        # disconnects would have its slug (and therefore its entities)
+        # change out from under it, even though nothing happened to it.
+        self._collided_base_slugs: set[str] = set()
         # Callbacks platforms register to get called with newly seen
         # devices: list[tuple[slug, device_obj, capabilities]].
         self._new_device_listeners: list = []
@@ -242,24 +270,42 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
         # Slugs are name-derived, so two devices with the same name (e.g.
         # two of the same toy model) would otherwise collide and silently
-        # overwrite each other below. Only disambiguate when a collision
-        # actually occurs — a lone device keeps its plain, stable slug.
+        # overwrite each other below. Disambiguation is *persistent* for
+        # the lifetime of this coordinator (see self._slug_assignments/
+        # self._collided_base_slugs above), not recomputed from scratch
+        # every cycle — recomputing from only the currently-connected set
+        # was the source of a real bug: with two same-named devices A/B
+        # disambiguated to _0/_1, A disconnecting would make B look like
+        # the only device with that name again, silently reverting B's
+        # slug back to the plain, unsuffixed form — changing B's entity
+        # identity even though nothing happened to B itself. Once a name
+        # has ever collided, it never hands out the plain slug again,
+        # and a device that's already been assigned a slug always keeps
+        # that exact slug afterward, including across it disconnecting
+        # and reconnecting later.
         base_slugs = [bp.device_slug(d) for d in devs]
         counts: dict[str, int] = {}
         for s in base_slugs:
             counts[s] = counts.get(s, 0) + 1
-        if any(c > 1 for c in counts.values()):
+        newly_collided = {s for s, c in counts.items() if c > 1} - self._collided_base_slugs
+        if newly_collided:
             _LOGGER.warning(
                 "Multiple devices share a name (%s) — disambiguating by device index",
-                [s for s, c in counts.items() if c > 1],
+                sorted(newly_collided),
             )
+        self._collided_base_slugs.update(newly_collided)
 
         for dev, base_slug in zip(devs, base_slugs):
-            if counts[base_slug] > 1:
-                idx = getattr(dev, "index", None)
+            idx = getattr(dev, "index", None)
+            identity = (base_slug, idx if idx is not None else id(dev))
+            if identity in self._slug_assignments:
+                slug = self._slug_assignments[identity]
+            elif base_slug in self._collided_base_slugs:
                 slug = f"{base_slug}_{idx}" if idx is not None else f"{base_slug}_{id(dev)}"
+                self._slug_assignments[identity] = slug
             else:
                 slug = base_slug
+                self._slug_assignments[identity] = slug
 
             caps = bp.get_capabilities(dev)
             battery = None
@@ -454,7 +500,7 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         dev = self.get_device(slug)
         if dev is None:
             return False
-        return await bp.apply_intensity(dev, percent / 100.0)
+        return await bp.apply_intensity(dev, _clamp(percent, 0, 100) / 100.0)
 
     async def async_apply_rotation(self, slug: str, signed_percent: float) -> bool:
         """signed_percent is -100..100 — positive clockwise, negative
@@ -471,7 +517,7 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         dev = self.get_device(slug)
         if dev is None:
             return False
-        return await bp.apply_rotation(dev, signed_percent / 100.0)
+        return await bp.apply_rotation(dev, _clamp(signed_percent, -100, 100) / 100.0)
 
     async def async_apply_led(self, slug: str, percent: float) -> bool:
         """percent is 0-100 brightness. Same gate checks as
@@ -486,7 +532,7 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         dev = self.get_device(slug)
         if dev is None:
             return False
-        return await bp.apply_led(dev, percent / 100.0)
+        return await bp.apply_led(dev, _clamp(percent, 0, 100) / 100.0)
 
     def get_position_duration(self, slug: str) -> int:
         return self.position_duration_ms.get(slug, 0)
@@ -498,6 +544,7 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         entry's own options, so it survives a Home Assistant restart
         or a reload (e.g. from the options flow's URL change) instead
         of silently resetting to 0."""
+        duration_ms = int(_clamp(duration_ms, 0, 10000))
         self.position_duration_ms[slug] = duration_ms
         self.hass.config_entries.async_update_entry(
             self.config_entry,
@@ -521,10 +568,11 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             return False
         if duration_ms is None:
             duration_ms = self.get_position_duration(slug)
+        duration_ms = int(_clamp(duration_ms, 0, 10000))
         dev = self.get_device(slug)
         if dev is None:
             return False
-        return await bp.send_position(dev, percent / 100.0, duration_ms)
+        return await bp.send_position(dev, _clamp(percent, 0, 100) / 100.0, duration_ms)
 
     async def async_stop_all(self) -> None:
         """Stops every toy immediately and engages the global gate:

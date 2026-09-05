@@ -6,6 +6,34 @@ All notable changes to this project are documented here, per release.
 
 - Nothing yet.
 
+## [0.3.5]
+
+### Fixed
+
+- **Device slug for one toy could change out from under it when
+  another, same-named toy disconnected.** Disambiguation (`_0`/`_1`
+  suffixes for same-named toys) used to be recalculated from scratch
+  on every refresh, based only on the currently-connected set — so if
+  one of two same-named toys disconnected, the survivor would look
+  like the only device with that name again, silently reverting its
+  slug (and therefore its entity IDs) back to the plain, unsuffixed
+  form. Disambiguation is now persistent for the coordinator's
+  lifetime: once a name has ever collided, it never hands out the
+  plain slug again, and a device that's already been assigned a slug
+  always keeps that exact slug afterward — including across it
+  disconnecting and reconnecting, regardless of reconnect order.
+- **Config flow now tests the fallback URL too.** Setup used to test
+  only the primary URL, even though the coordinator's own runtime
+  connection logic tries the fallback URL if the primary fails — a
+  primary/fallback pair that would work fine once running could be
+  rejected at setup time. Setup and runtime now behave consistently.
+- **Coordinator methods now clamp out-of-range values.** Home
+  Assistant's own number entities already enforce their declared
+  min/max before calling in, but the coordinator's `async_apply_*`
+  methods are a more directly reachable internal surface than that —
+  intensity, rotation, LED, position, and position-duration now all
+  clamp to their valid range regardless of what's passed in.
+
 ## [0.3.4]
 
 ### Fixed

@@ -24,11 +24,34 @@ STEP_USER_SCHEMA = vol.Schema(
 )
 
 
-async def _test_connection(url: str) -> None:
+async def _try_connect(url: str) -> None:
     client = bp.ButtplugClient(CLIENT_NAME)
     await client.connect(url)
     if hasattr(client, "disconnect"):
         await client.disconnect()
+
+
+async def _test_connection(url: str, fallback_url: str | None = None) -> None:
+    """Tries `url` first, then `fallback_url` if one is given —
+    matching IntifaceCoordinator._ensure_client()'s own runtime
+    fallback behaviour exactly (see coordinator.py). Without this,
+    setup could reject a primary/fallback pair that would actually work
+    fine once the integration is running (primary temporarily down,
+    fallback reachable) — an inconsistency between what setup allows
+    and what runtime actually does. If both fail, raises the primary
+    URL's own error, not the fallback's, since that's the field
+    visibly showing the error in the form."""
+    try:
+        await _try_connect(url)
+        return
+    except Exception as primary_err:
+        if fallback_url:
+            try:
+                await _try_connect(fallback_url)
+                return
+            except Exception:
+                pass
+        raise primary_err
 
 
 class IntifaceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -44,7 +67,7 @@ class IntifaceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             fallback = (user_input.get(CONF_FALLBACK_URL) or "").strip()
 
             try:
-                await _test_connection(url)
+                await _test_connection(url, fallback or None)
             except Exception:
                 _LOGGER.debug("Connection test failed", exc_info=True)
                 errors["base"] = "cannot_connect"
@@ -102,7 +125,7 @@ class IntifaceOptionsFlow(config_entries.OptionsFlow):
 
             if not errors:
                 try:
-                    await _test_connection(url)
+                    await _test_connection(url, fallback or None)
                 except Exception:
                     _LOGGER.debug("Connection test failed", exc_info=True)
                     errors["base"] = "cannot_connect"
