@@ -10,6 +10,8 @@ free.
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from homeassistant.components.light import ATTR_BRIGHTNESS, ColorMode, LightEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -27,7 +29,7 @@ class IntifaceLed(CoordinatorEntity[IntifaceCoordinator], LightEntity):
     RGB value)."""
 
     _attr_color_mode = ColorMode.BRIGHTNESS
-    _attr_supported_color_modes = {ColorMode.BRIGHTNESS}
+    _attr_supported_color_modes: ClassVar[set[ColorMode]] = {ColorMode.BRIGHTNESS}
     _attr_has_entity_name = True
     _attr_translation_key = "led"
 
