@@ -292,3 +292,101 @@ async def test_options_flow_url_change_does_not_wipe_other_options(hass) -> None
     assert entry.options.get("position_duration_ms") == {"simulated_stroker": 2500}, (
         f"position_duration_ms must survive a URL change via the options flow, got {entry.options}"
     )
+
+
+class _DangerousFakeConnector:
+    """Mimics the real buttplug-py library's private WebSocketConnector:
+    disconnect() here is the SAFE, low-level close with no protocol-level
+    side effects."""
+
+    def __init__(self):
+        self.disconnect_calls = 0
+
+    async def disconnect(self):
+        self.disconnect_calls += 1
+
+
+class _DangerousFakeButtplugClient:
+    """Mimics the real buttplug-py ButtplugClient closely enough to prove
+    the fix: its own disconnect() unconditionally calls stop_all_devices()
+    first — a genuinely server-wide stop, confirmed against the real
+    library source (see _try_connect()'s own docstring in config_flow.py
+    for the exact commit/lines). If _try_connect() ever regresses to
+    calling client.disconnect() again, this fake would make that call
+    show up as a stop_all_devices_calls > 0."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self._connector = _DangerousFakeConnector()
+        self._connected = False
+        self.stop_all_devices_calls = 0
+        self.disconnect_calls = 0
+
+    async def connect(self, url: str) -> None:
+        self._connected = True
+
+    async def stop_all_devices(self) -> None:
+        self.stop_all_devices_calls += 1
+
+    async def disconnect(self) -> None:
+        self.disconnect_calls += 1
+        if not self._connected:
+            return
+        self._connected = False
+        try:
+            await self.stop_all_devices()
+        except Exception:
+            pass
+        await self._connector.disconnect()
+        self._connector = None
+
+
+@pytest.mark.asyncio
+async def test_try_connect_never_stops_every_device_on_the_server(monkeypatch) -> None:
+    """Regression test: the real buttplug-py ButtplugClient.disconnect()
+    unconditionally calls stop_all_devices() first — a genuinely
+    server-wide StopCmd (no device_index), not scoped to this client's
+    own session. Since Intiface manages device connections centrally
+    (shared across every client connected to it), a config-flow
+    connection *test* calling the real disconnect() used to stop every
+    toy currently running via this integration's own already-connected
+    coordinator too. _try_connect() must close the connection without
+    ever triggering that."""
+    from custom_components.intiface_control import config_flow as cf
+
+    created = []
+
+    class TrackedClient(_DangerousFakeButtplugClient):
+        def __init__(self, name):
+            super().__init__(name)
+            created.append(self)
+
+    monkeypatch.setattr(cf.bp, "ButtplugClient", TrackedClient)
+
+    await cf._try_connect("ws://fake:12345")
+
+    assert len(created) == 1
+    client = created[0]
+    assert client.stop_all_devices_calls == 0, "must never trigger the server-wide stop"
+    assert client.disconnect_calls == 0, "must never call the client's own disconnect()"
+    assert client._connector.disconnect_calls == 1, "the underlying connection must still be closed cleanly"
+
+
+@pytest.mark.asyncio
+async def test_try_connect_does_not_crash_without_a_connector_attribute(monkeypatch) -> None:
+    """If a future library version restructures internals and _connector
+    is gone, _try_connect() must degrade gracefully (leave the test
+    connection open rather than crash) — and must NOT fall back to the
+    dangerous client.disconnect()."""
+    from custom_components.intiface_control import config_flow as cf
+
+    class MinimalClient:
+        def __init__(self, name):
+            self.name = name
+
+        async def connect(self, url):
+            pass
+
+    monkeypatch.setattr(cf.bp, "ButtplugClient", MinimalClient)
+
+    await cf._try_connect("ws://fake:12345")  # must not raise

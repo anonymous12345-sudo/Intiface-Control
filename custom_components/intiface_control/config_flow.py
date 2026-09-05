@@ -25,10 +25,36 @@ STEP_USER_SCHEMA = vol.Schema(
 
 
 async def _try_connect(url: str) -> None:
+    """Confirms `url` is a reachable Intiface server, without any side
+    effect on whatever devices are currently running elsewhere.
+
+    Deliberately does NOT call client.disconnect() — the real
+    buttplug-py client's disconnect() unconditionally calls
+    stop_all_devices() first, which sends a genuinely server-wide
+    StopCmd (no device_index — every device on the server, not scoped
+    to this client's own session). Confirmed directly against the
+    library source:
+    https://github.com/buttplugio/buttplug-py/blob/e21318f/src/buttplug/client.py#L294-L318
+    Since Intiface manages device connections centrally (shared across
+    every client connected to it), that would stop every toy currently
+    running via this integration's own already-connected coordinator —
+    a "just testing a URL" action should never be able to do that.
+
+    Closes the underlying WebSocket connector directly instead — a
+    private attribute, but the only way to close cleanly without that
+    side effect with this library version. If that attribute isn't
+    there (a future library version restructured internals), this
+    leaves the test connection open rather than falling back to the
+    public disconnect() — a lingering open connection is a far smaller
+    problem than stopping someone's toy mid-use."""
     client = bp.ButtplugClient(CLIENT_NAME)
     await client.connect(url)
-    if hasattr(client, "disconnect"):
-        await client.disconnect()
+    connector = getattr(client, "_connector", None)
+    if connector is not None and hasattr(connector, "disconnect"):
+        try:
+            await connector.disconnect()
+        except Exception:
+            _LOGGER.debug("Error closing test connection", exc_info=True)
 
 
 async def _test_connection(url: str, fallback_url: str | None = None) -> None:

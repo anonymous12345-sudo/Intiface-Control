@@ -355,6 +355,14 @@ started (not just the app open), and that the URL is reachable from
 your Home Assistant instance specifically — not just from your phone.
 `ws://` (not `wss://`), and don't forget the port.
 
+Testing a URL here (initial setup, or changing it later) never affects
+any toy currently running elsewhere — it closes its own test
+connection without ever sending anything that could stop a device. The
+underlying `buttplug` library's normal `disconnect()` unconditionally
+stops *every* device on the server first (confirmed against its
+source), which would be a nasty surprise for something that's supposed
+to be a harmless connectivity check — this deliberately avoids that.
+
 **A toy shows as disconnected, but it's still on**
 Check Intiface Central directly first — if it doesn't see the toy
 either, that's a Bluetooth/Intiface-side issue, not this integration.

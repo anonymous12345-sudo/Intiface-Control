@@ -6,6 +6,22 @@ All notable changes to this project are documented here, per release.
 
 - Nothing yet.
 
+## [0.3.9]
+
+### Fixed
+
+- **Testing a URL (initial setup, or changing it in options) used to
+  stop every toy running on the Intiface server.** Confirmed directly
+  against the `buttplug` library's source: its `ButtplugClient.
+  disconnect()` unconditionally calls `stop_all_devices()` first — a
+  genuinely server-wide stop (no device_index), not scoped to that
+  one client's own session. Since Intiface manages device connections
+  centrally, shared across every client connected to it, this meant a
+  simple connectivity check could stop a toy currently being driven by
+  this integration's own already-connected coordinator. The connection
+  test now closes its own connection directly, without ever going
+  through the library's `disconnect()`.
+
 ## [0.3.8]
 
 ### Fixed
