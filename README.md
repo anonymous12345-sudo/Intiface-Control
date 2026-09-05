@@ -338,7 +338,7 @@ section's sibling behaviour: entities for a toy that goes offline
 become *unavailable* (or, for the connectivity sensor, just switch to
 "off"), but are never deleted. This keeps dashboards and automations
 stable instead of silently losing entities. If you genuinely want to
-remove a toy's entities (e.g. you sold it), delete its device manually
+remove a toy's entities, delete its device manually
 under **Settings → Devices & services → Intiface Control**.
 
 **A persistent "Can't connect to Intiface" notification under Settings → System → Repairs**
