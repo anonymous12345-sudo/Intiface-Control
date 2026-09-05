@@ -29,30 +29,35 @@ from .const import DOMAIN
 from .coordinator import IntifaceCoordinator
 
 
-class IntifaceStopAllSwitch(SwitchEntity):
-    """Entry-wide emergency stop — affects every connected toy."""
+class IntifaceStopAllSwitch(CoordinatorEntity[IntifaceCoordinator], SwitchEntity):
+    """Entry-wide emergency stop — affects every connected toy. `is_on`
+    is computed live from the coordinator's own gate state (matching
+    IntifaceEnableSwitch below) rather than cached locally. Always
+    available regardless of connection state — a kill switch should
+    stay usable even while Intiface itself is unreachable."""
 
     _attr_has_entity_name = True
     _attr_translation_key = "stop_all"
     _attr_icon = "mdi:stop-circle"
 
     def __init__(self, coordinator: IntifaceCoordinator, entry_id: str) -> None:
-        self._coordinator = coordinator
+        super().__init__(coordinator)
         self._attr_unique_id = f"{entry_id}_stop_all"
-        self._attr_is_on = False
+
+    @property
+    def available(self) -> bool:
+        return True
 
     @property
     def is_on(self) -> bool:
-        return self._attr_is_on
+        return self.coordinator.stopped
 
     async def async_turn_on(self, **kwargs) -> None:
-        await self._coordinator.async_stop_all()
-        self._attr_is_on = True
+        await self.coordinator.async_stop_all()
         self.async_write_ha_state()
 
     async def async_turn_off(self, **kwargs) -> None:
-        self._coordinator.async_clear_stop()
-        self._attr_is_on = False
+        self.coordinator.async_clear_stop()
         self.async_write_ha_state()
 
 

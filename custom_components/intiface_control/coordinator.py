@@ -21,6 +21,7 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from . import client as bp
@@ -36,6 +37,10 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _connection_issue_id(entry_id: str) -> str:
+    return f"cannot_connect_{entry_id}"
+
+
 class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     """Coordinates the Intiface connection and the list of known devices."""
 
@@ -47,7 +52,6 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             config_entry=entry,
             update_interval=timedelta(seconds=UPDATE_INTERVAL_SECONDS),
         )
-        self.entry = entry
         self.url: str = entry.data[CONF_URL]
         self.fallback_url: str | None = entry.data.get(CONF_FALLBACK_URL) or None
 
@@ -152,12 +156,22 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         try:
             await self._ensure_client()
             self._consecutive_failures = 0
+            ir.async_delete_issue(self.hass, DOMAIN, _connection_issue_id(self.config_entry.entry_id))
         except UpdateFailed:
             self._consecutive_failures += 1
             if self._consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
                 _LOGGER.warning(
                     "Intiface unreachable for %d consecutive updates, marking all devices offline",
                     self._consecutive_failures,
+                )
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    _connection_issue_id(self.config_entry.entry_id),
+                    is_fixable=False,
+                    severity=ir.IssueSeverity.WARNING,
+                    translation_key="cannot_connect",
+                    translation_placeholders={"url": self.url},
                 )
                 return {}
             # Keep the last-known snapshot for a few cycles so a single
@@ -167,8 +181,28 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         devs = self._devices()
         data: dict[str, dict[str, Any]] = {}
         new_devices = []
-        for dev in devs:
-            slug = bp.device_slug(dev)
+
+        # Slugs are name-derived, so two devices with the same name (e.g.
+        # two of the same toy model) would otherwise collide and silently
+        # overwrite each other below. Only disambiguate when a collision
+        # actually occurs — a lone device keeps its plain, stable slug.
+        base_slugs = [bp.device_slug(d) for d in devs]
+        counts: dict[str, int] = {}
+        for s in base_slugs:
+            counts[s] = counts.get(s, 0) + 1
+        if any(c > 1 for c in counts.values()):
+            _LOGGER.warning(
+                "Multiple devices share a name (%s) — disambiguating by device index",
+                [s for s, c in counts.items() if c > 1],
+            )
+
+        for dev, base_slug in zip(devs, base_slugs):
+            if counts[base_slug] > 1:
+                idx = getattr(dev, "index", None)
+                slug = f"{base_slug}_{idx}" if idx is not None else f"{base_slug}_{id(dev)}"
+            else:
+                slug = base_slug
+
             caps = bp.get_capabilities(dev)
             battery = None
             if "battery" in caps:
@@ -379,3 +413,4 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             except Exception:
                 _LOGGER.debug("Error while disconnecting", exc_info=True)
         self._bp_client = None
+        ir.async_delete_issue(self.hass, DOMAIN, _connection_issue_id(self.config_entry.entry_id))

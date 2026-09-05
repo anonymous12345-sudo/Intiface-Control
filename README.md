@@ -317,7 +317,7 @@ the pattern services — those use Home Assistant's device picker instead
 Double-check the folder structure under `custom_components/intiface_control/`
 — see the note in [Manual installation](#manual-installation) about
 avoiding an accidentally double-nested folder. Then check **Settings →
-System → Logs** for an error mentioning `custom_components.buttplug`.
+System → Logs** for an error mentioning `custom_components.intiface_control`.
 
 **"Could not connect to Intiface at that URL"**
 Confirm Intiface Central is running and its server is actually
@@ -341,6 +341,24 @@ stable instead of silently losing entities. If you genuinely want to
 remove a toy's entities (e.g. you sold it), delete its device manually
 under **Settings → Devices & services → Intiface Control**.
 
+**A persistent "Can't connect to Intiface" notification under Settings → System → Repairs**
+This appears once the connection has failed for several consecutive
+refresh cycles in a row (not for a single brief blip) — auto-reconnect
+is still running in the background regardless, this is purely a
+visibility aid so a long-running outage doesn't go unnoticed just
+because nobody happened to look at an entity. It clears itself
+automatically the moment the connection recovers. If the address
+itself has changed, use **Settings → Devices & services → Intiface
+Control → Configure** to update it.
+
+**Two toys with the same name**
+Each toy's identifier is derived from its name as reported by Intiface.
+If two connected toys happen to share the same name (e.g. two of the
+same model), they're automatically disambiguated by appending their
+Intiface device index (`lovense_hush_0`, `lovense_hush_1`) instead of
+colliding into a single entity. A lone toy is never affected by this —
+only an actual name collision changes anything.
+
 ## Known limitations
 
 - `Constrict` and `PositionWithDuration` are implemented using the
@@ -355,6 +373,11 @@ under **Settings → Devices & services → Intiface Control**.
   coordinator supports it (`async_apply_position(slug, percent,
   duration_ms)`), it's just not exposed as a service or a second
   entity yet.
+- The index-based disambiguation for same-named toys (see
+  Troubleshooting above) isn't guaranteed stable across a full Intiface
+  restart — indices are assigned in connection order, which could in
+  principle shift which of two identically-named toys gets which
+  suffix. Toys with distinct names are unaffected.
 
 ## Releasing updates (for maintainers)
 

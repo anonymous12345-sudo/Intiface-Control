@@ -51,21 +51,22 @@ STOP_PATTERN_SCHEMA = vol.Schema({**_DEVICE_ID_FIELD})
 def _resolve_device(hass: HomeAssistant, device_id: str) -> tuple[IntifaceCoordinator, str] | None:
     """Maps a Home Assistant device_id back to the (coordinator, slug)
     pair it represents. Every device we create has an identifier of the
-    form (DOMAIN, f"{entry_id}_{slug}") — matching that prefix against
-    each known config entry tells us both which coordinator owns the
-    device and what its own slug is, correctly handling more than one
-    Intiface server being configured at once. Returns None for a
-    device_id that isn't one of ours (e.g. it belongs to a different
-    integration, or was removed)."""
+    form (DOMAIN, f"{entry_id}_{slug}") — for each known coordinator and
+    each of its known slugs, this checks whether that *exact* identifier
+    is present on the device, rather than parsing the device's own
+    identifier string apart on an assumed prefix boundary. Correctly
+    handles more than one Intiface server being configured at once, and
+    returns None for a device_id that isn't one of ours (e.g. it belongs
+    to a different integration, or was removed)."""
     registry = dr.async_get(hass)
     device_entry = registry.async_get(device_id)
     if device_entry is None:
         return None
     for coordinator in hass.data.get(DOMAIN, {}).values():
-        prefix = f"{coordinator.entry.entry_id}_"
-        for ident_domain, identifier in device_entry.identifiers:
-            if ident_domain == DOMAIN and identifier.startswith(prefix):
-                return coordinator, identifier[len(prefix):]
+        entry_id = coordinator.config_entry.entry_id
+        for slug in coordinator.data or {}:
+            if (DOMAIN, f"{entry_id}_{slug}") in device_entry.identifiers:
+                return coordinator, slug
     return None
 
 

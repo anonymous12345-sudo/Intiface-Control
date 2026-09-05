@@ -6,6 +6,40 @@ All notable changes to this project are documented here, per release.
 
 - Nothing yet.
 
+## [0.2.1]
+
+### Added
+
+- **Repair issue** under Settings → System → Repairs when Intiface has
+  been unreachable for several consecutive refresh cycles in a row —
+  purely a visibility aid (auto-reconnect behaviour is unchanged), and
+  it clears itself automatically once the connection recovers.
+
+### Fixed
+
+- **Two toys sharing the same name used to silently collide.** Device
+  identifiers are name-derived, so two toys of the same model (or any
+  other name collision) previously overwrote each other in the
+  coordinator's internal data — one of them would just vanish from Home
+  Assistant with no error. They're now automatically disambiguated by
+  device index (`lovense_hush_0`, `lovense_hush_1`) when a collision is
+  detected; a lone device's slug is unaffected.
+- Consolidated `self.entry`/`self.config_entry` on the coordinator down
+  to just `self.config_entry` (the two were the same object under two
+  different names since the earlier config_entry fix).
+- The Home Assistant device_id → toy-slug lookup used for the pattern
+  services now does an exact match against each known slug's expected
+  identifier, instead of parsing a device's identifier string apart on
+  an assumed prefix boundary.
+
+### Changed
+
+- The global "Stop all toys" switch is now a `CoordinatorEntity`, like
+  the per-toy Enabled switch, with its `is_on` computed live from the
+  coordinator's own gate state instead of a separately cached local
+  flag. Purely an internal consistency clean-up — behaviour is
+  unchanged (still always available regardless of connection state).
+
 ## [0.2.0]
 
 ### Changed — breaking changes

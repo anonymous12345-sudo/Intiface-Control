@@ -115,5 +115,11 @@
         }
       }
     }
+  },
+  "issues": {
+    "cannot_connect": {
+      "title": "Can't connect to Intiface",
+      "description": "Intiface Control hasn't been able to connect to {url} for a while, so toys have gone unavailable. It keeps retrying automatically in the background — no action needed unless this persists. If the address has changed (new device, different network), go to Settings → Devices & services → Intiface Control → Configure to update it."
+    }
   }
 }

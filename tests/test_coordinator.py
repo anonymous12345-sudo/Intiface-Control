@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from homeassistant.helpers import issue_registry as ir
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.intiface_control import client as bp
@@ -302,3 +303,122 @@ async def test_pattern_repeat_runs_multiple_cycles(coordinator, fake_device) -> 
     speeds = [v[0] for _, v in dev.sent[:-1]]
     transitions = sum(1 for i in range(1, len(speeds)) if speeds[i - 1] < 0.5 < speeds[i])
     assert transitions == 3, f"repeat=3 should produce exactly 3 low->high transitions, got {transitions}"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_device_names_get_disambiguated(coordinator, fake_device) -> None:
+    """Regression test: two toys sharing the same name (e.g. two of the
+    same model) used to silently collide into a single dict entry,
+    losing one of them entirely with no error. They must now each get
+    their own slug, and remain independently controllable."""
+    hush_a = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    hush_a.index = 0
+    hush_b = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    hush_b.index = 1
+    coordinator._bp_client.devices = {0: hush_a, 1: hush_b}
+    await coordinator.async_refresh()
+
+    assert len(coordinator.data) == 2, f"both devices must get their own entry, got {list(coordinator.data)}"
+    assert "lovense_hush_0" in coordinator.data
+    assert "lovense_hush_1" in coordinator.data
+
+    await coordinator.async_apply_intensity("lovense_hush_0", 40)
+    await coordinator.async_apply_intensity("lovense_hush_1", 70)
+    assert hush_a.sent[-1] == (bp.VIBRATE, (0.4,))
+    assert hush_b.sent[-1] == (bp.VIBRATE, (0.7,))
+
+
+@pytest.mark.asyncio
+async def test_lone_device_keeps_plain_slug_when_no_collision(coordinator, fake_device) -> None:
+    """A single device must not be disambiguated just because the
+    disambiguation logic exists — only an actual name collision should
+    change its slug from the plain, stable one."""
+    dev = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+
+    assert list(coordinator.data) == ["lovense_hush"]
+
+
+class FailingButtplugClient:
+    """Always fails to connect — used to exercise the repair-issue path,
+    which only engages after several consecutive real connection
+    failures (not the pre-populated-devices bypass the other tests use)."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.devices: dict = {}
+        self.fail_count = 0
+
+    async def connect(self, url: str) -> None:
+        self.fail_count += 1
+        raise ConnectionError("simulated failure")
+
+    async def start_scanning(self) -> None:
+        pass
+
+    async def stop_scanning(self) -> None:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_repair_issue_created_after_repeated_connection_failures(hass, monkeypatch) -> None:
+    monkeypatch.setattr(bp, "ButtplugClient", FailingButtplugClient)
+
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={CONF_URL: "ws://unreachable:12345", CONF_FALLBACK_URL: None}
+    )
+    entry.add_to_hass(hass)
+    coord = IntifaceCoordinator(hass, entry)
+
+    for _ in range(3):
+        await coord.async_refresh()
+
+    issue_reg = ir.async_get(hass)
+    issue = issue_reg.async_get_issue(DOMAIN, f"cannot_connect_{entry.entry_id}")
+    assert issue is not None
+    assert issue.translation_placeholders == {"url": "ws://unreachable:12345"}
+
+
+@pytest.mark.asyncio
+async def test_repair_issue_cleared_once_connection_recovers(hass, monkeypatch) -> None:
+    monkeypatch.setattr(bp, "ButtplugClient", FailingButtplugClient)
+
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={CONF_URL: "ws://flaky:12345", CONF_FALLBACK_URL: None}
+    )
+    entry.add_to_hass(hass)
+    coord = IntifaceCoordinator(hass, entry)
+
+    for _ in range(3):
+        await coord.async_refresh()
+
+    issue_reg = ir.async_get(hass)
+    assert issue_reg.async_get_issue(DOMAIN, f"cannot_connect_{entry.entry_id}") is not None
+
+    # Swap in a working client and force a fresh connect attempt.
+    monkeypatch.setattr(bp, "ButtplugClient", lambda name: FakeButtplugClient(name))
+    coord._bp_client = None
+    await coord.async_refresh()
+
+    assert issue_reg.async_get_issue(DOMAIN, f"cannot_connect_{entry.entry_id}") is None
+
+
+@pytest.mark.asyncio
+async def test_repair_issue_cleared_on_shutdown(hass, monkeypatch) -> None:
+    monkeypatch.setattr(bp, "ButtplugClient", FailingButtplugClient)
+
+    entry = MockConfigEntry(
+        domain=DOMAIN, data={CONF_URL: "ws://unreachable:12345", CONF_FALLBACK_URL: None}
+    )
+    entry.add_to_hass(hass)
+    coord = IntifaceCoordinator(hass, entry)
+
+    for _ in range(3):
+        await coord.async_refresh()
+
+    issue_reg = ir.async_get(hass)
+    assert issue_reg.async_get_issue(DOMAIN, f"cannot_connect_{entry.entry_id}") is not None
+
+    await coord.async_shutdown_client()
+    assert issue_reg.async_get_issue(DOMAIN, f"cannot_connect_{entry.entry_id}") is None
