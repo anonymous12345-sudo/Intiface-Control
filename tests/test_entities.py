@@ -301,3 +301,23 @@ async def test_led_light_entity_end_to_end(hass, setup_entry, fake_device) -> No
         blocking=True,
     )
     assert hass.states.get("light.led_toy_led").state == "off"
+
+
+@pytest.mark.asyncio
+async def test_rotation_slider_end_to_end(hass, setup_entry, fake_device) -> None:
+    coordinator = hass.data[DOMAIN][setup_entry.entry_id]
+    dev = fake_device("Rotator", outputs={bp.ROTATE})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert hass.states.get("number.rotator_intensity") is None, "rotate must not create an Intensity entity"
+    assert hass.states.get("number.rotator_rotation") is not None
+
+    await hass.services.async_call(
+        "number", "set_value",
+        {"entity_id": "number.rotator_rotation", "value": -80},
+        blocking=True,
+    )
+    assert hass.states.get("number.rotator_rotation").state == "-80.0"
+    assert dev.sent[-1] == (bp.ROTATE, (-0.8,))

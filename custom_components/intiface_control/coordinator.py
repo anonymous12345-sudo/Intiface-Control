@@ -396,6 +396,23 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             return False
         return await bp.apply_intensity(dev, percent / 100.0)
 
+    async def async_apply_rotation(self, slug: str, signed_percent: float) -> bool:
+        """signed_percent is -100..100 — positive clockwise, negative
+        counter-clockwise. Same gate checks as async_apply_intensity, and
+        also cancels any pattern running on this slug (a direct command
+        overriding a running pattern, same as intensity/position do)."""
+        if self.stopped:
+            _LOGGER.warning("Ignoring rotation command for %s: stop switch is on", slug)
+            return False
+        if slug in self.per_slug_stopped:
+            _LOGGER.warning("Ignoring rotation command for %s: device stop switch is on", slug)
+            return False
+        await self._cancel_pattern(slug)
+        dev = self.get_device(slug)
+        if dev is None:
+            return False
+        return await bp.apply_rotation(dev, signed_percent / 100.0)
+
     async def async_apply_led(self, slug: str, percent: float) -> bool:
         """percent is 0-100 brightness. Same gate checks as
         async_apply_intensity — a stopped or disabled device refuses

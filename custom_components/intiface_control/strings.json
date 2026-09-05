@@ -35,6 +35,7 @@
   "entity": {
     "number": {
       "intensity": { "name": "Intensity" },
+      "rotation": { "name": "Rotation" },
       "position": { "name": "Position" },
       "position_duration": { "name": "Position duration" }
     },

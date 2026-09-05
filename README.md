@@ -55,7 +55,8 @@ For every connected toy, grouped under one Home Assistant **device**:
 
 | Entity | When it's created | What it does |
 |---|---|---|
-| `number` — Intensity | Device supports vibrate, oscillate, rotate, constrict, temperature, or spray | 0–100% slider. Automatically uses whichever of those output types the device actually supports. |
+| `number` — Intensity | Device supports vibrate, oscillate, constrict, temperature, or spray | 0–100% slider. Automatically uses whichever of those output types the device actually supports. |
+| `number` — Rotation | Device supports rotate | -100–100 signed slider — positive is clockwise, negative counter-clockwise, 0 is stopped. Kept separate from Intensity above since buttplug documents Rotate's range as signed specifically to represent direction, which a 0-100% slider can't express. |
 | `number` — Position | Device supports Position or PositionWithDuration | 0–100% slider for linear devices (e.g. a stroker). Uses whatever duration is set on the companion "Position duration" entity below (0/instant if that's never been touched). |
 | `number` — Position duration | Same as Position above | 0–10 second slider controlling how long the Position slider's *next* move takes. A stored preference, not a toy command by itself — moving only this slider never sends anything to the device. |
 | `light` — LED | Device supports Led | Brightness-only light control. Modeled as a real Home Assistant light (not another generic slider), since that's the idiomatic representation for a light. |
@@ -365,14 +366,20 @@ only an actual name collision changes anything.
 
 ## Known limitations
 
-- `Constrict`, `PositionWithDuration`, `Temperature`, `Spray`, and `Led`
-  are all implemented using the same capability-introspection approach
-  as everything else, but haven't been exercised against real hardware
-  of those specific kinds (e.g. a heating or LED-equipped toy) — only
-  against Intiface's simulated devices. If something behaves oddly on
-  real hardware of that type, check the Home Assistant logs at debug
-  level; the underlying client code logs which specific attempt
-  succeeded or failed.
+- `Constrict`, `PositionWithDuration`, `Rotate`, `Temperature`, `Spray`,
+  and `Led` are all implemented using the same capability-introspection
+  approach as everything else, but haven't been exercised against real
+  hardware of those specific kinds (e.g. a heating, LED-equipped, or
+  bidirectional-rotating toy) — only against Intiface's simulated
+  devices. If something behaves oddly on real hardware of that type,
+  check the Home Assistant logs at debug level; the underlying client
+  code logs which specific attempt succeeded or failed. Rotation in
+  particular: buttplug's spec documents the value range for Rotate as
+  signed to support direction, and that's what this integration sends,
+  but a specific device's *actual* supported range (e.g. whether it can
+  really reverse, or only spin one way) isn't something this
+  integration can introspect — only Intiface itself knows that per
+  device, and is expected to handle it appropriately.
 - `Pressure` is implemented but genuinely unverified against real
   hardware — the exact value scale/units buttplug reports for it aren't
   confirmed, so the sensor has no unit or device class and is disabled

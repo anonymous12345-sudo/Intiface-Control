@@ -200,3 +200,35 @@ async def test_device_without_new_capabilities_does_not_get_them(fake_device) ->
     assert "led" not in caps
     assert "rssi" not in caps
     assert "pressure" not in caps
+
+
+@pytest.mark.asyncio
+async def test_apply_rotation_forwards_positive_and_negative_unchanged(fake_device) -> None:
+    """Regression test: buttplug documents Rotate's value range as signed
+    specifically to represent direction (clockwise/counter-clockwise) —
+    a negative value is a real, valid command, not something to clamp
+    or reject."""
+    dev = fake_device("Rotator", outputs={bp.ROTATE})
+    ok = await bp.apply_rotation(dev, 0.6)
+    assert ok is True
+    assert dev.sent[-1] == (bp.ROTATE, (0.6,))
+
+    dev.sent.clear()
+    ok = await bp.apply_rotation(dev, -0.6)
+    assert ok is True
+    assert dev.sent[-1] == (bp.ROTATE, (-0.6,)), "negative rotation must be forwarded unchanged, not clamped to 0"
+
+
+@pytest.mark.asyncio
+async def test_apply_rotation_zero_stops_device(fake_device) -> None:
+    dev = fake_device("Rotator", outputs={bp.ROTATE})
+    ok = await bp.apply_rotation(dev, 0.0)
+    assert ok is True
+    assert dev.sent[-1] == ("STOP", None)
+
+
+def test_rotate_is_not_folded_into_intensity_priority() -> None:
+    """Rotate gets its own signed -100..100 entity, not the generic
+    unsigned Intensity slider — it must never appear in the priority
+    list used to pick an intensity output type."""
+    assert bp.ROTATE not in bp.INTENSITY_OUTPUT_PRIORITY

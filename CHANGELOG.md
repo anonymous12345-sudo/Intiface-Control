@@ -6,6 +6,19 @@ All notable changes to this project are documented here, per release.
 
 - Nothing yet.
 
+## [0.3.1]
+
+### Fixed
+
+- **Rotation direction was never controllable.** Rotate was folded into
+  the generic 0-100% Intensity slider like vibrate/oscillate/etc, but
+  buttplug documents Rotate's value range as *signed* specifically to
+  represent direction (clockwise/counter-clockwise) — an unsigned
+  slider could only ever drive it one way. Rotate now gets its own
+  dedicated -100..100 "Rotation" number entity instead (0 is stopped,
+  sign is direction), and no longer appears in the Intensity slider at
+  all.
+
 ## [0.3.0]
 
 ### Added

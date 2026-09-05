@@ -1,7 +1,9 @@
 """Number entities: one per device for intensity (whichever of
-vibrate/oscillate/rotate/constrict/temperature/spray the device
-supports, picked automatically), one per device for position, and one
-per device for position duration, for devices that support it."""
+vibrate/oscillate/constrict/temperature/spray the device supports,
+picked automatically), one per device for rotation (kept separate from
+intensity — see IntifaceRotationNumber below for why), one per device
+for position, and one per device for position duration, for devices
+that support them."""
 
 from __future__ import annotations
 
@@ -19,7 +21,7 @@ from .coordinator import IntifaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-INTENSITY_CAPS = {"oscillate", "vibrate", "rotate", "constrict", "temperature", "spray"}
+INTENSITY_CAPS = {"oscillate", "vibrate", "constrict", "temperature", "spray"}
 
 
 def _device_info(entry_id: str, slug: str, name: str) -> DeviceInfo:
@@ -32,8 +34,9 @@ def _device_info(entry_id: str, slug: str, name: str) -> DeviceInfo:
 
 class IntifaceIntensityNumber(CoordinatorEntity[IntifaceCoordinator], NumberEntity):
     """Generic 0-100% intensity control — maps to whichever output type
-    (vibrate/oscillate/rotate/constrict/temperature/spray) the device
-    actually supports."""
+    (vibrate/oscillate/constrict/temperature/spray) the device actually
+    supports. Rotate is deliberately not part of this — see
+    IntifaceRotationNumber below."""
 
     _attr_native_min_value = 0
     _attr_native_max_value = 100
@@ -69,6 +72,54 @@ class IntifaceIntensityNumber(CoordinatorEntity[IntifaceCoordinator], NumberEnti
         self._attr_native_value = value
         self.async_write_ha_state()
         await self.coordinator.async_apply_intensity(self._slug, value)
+
+
+class IntifaceRotationNumber(CoordinatorEntity[IntifaceCoordinator], NumberEntity):
+    """-100..100 signed rotation control — positive is clockwise, negative
+    counter-clockwise, 0 is stopped. Kept separate from the generic
+    Intensity slider (rather than folded in like vibrate/oscillate/etc)
+    because buttplug documents Rotate's value range as *signed*
+    specifically to represent direction, which a 0-100% unsigned slider
+    can't express — a device that can only spin one way would still work
+    fine here (the negative half of the range simply wouldn't do
+    anything useful for it), but a bidirectional one finally can be
+    driven both ways.
+
+    Not exercised against real rotating hardware — only Intiface's
+    simulated rotator, whose own UI shows exactly this signed [-100, 100]
+    range for its Rotate feature."""
+
+    _attr_native_min_value = -100
+    _attr_native_max_value = 100
+    _attr_native_step = 1
+    _attr_mode = NumberMode.SLIDER
+    _attr_has_entity_name = True
+    _attr_translation_key = "rotation"
+    _attr_icon = "mdi:rotate-3d-variant"
+
+    def __init__(self, coordinator: IntifaceCoordinator, entry_id: str, slug: str, name: str) -> None:
+        super().__init__(coordinator)
+        self._slug = slug
+        self._attr_unique_id = f"{entry_id}_{slug}_rotation"
+        self._attr_device_info = _device_info(entry_id, slug, name)
+        self._attr_native_value = 0.0
+        coordinator.add_stop_listener(self._on_stop)
+
+    def _on_stop(self, affected_slug: str | None) -> None:
+        """See IntifaceIntensityNumber._on_stop() above."""
+        if affected_slug is not None and affected_slug != self._slug:
+            return
+        self._attr_native_value = 0.0
+        self.async_write_ha_state()
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._slug in (self.coordinator.data or {})
+
+    async def async_set_native_value(self, value: float) -> None:
+        self._attr_native_value = value
+        self.async_write_ha_state()
+        await self.coordinator.async_apply_rotation(self._slug, value)
 
 
 class IntifacePositionNumber(CoordinatorEntity[IntifaceCoordinator], NumberEntity):
@@ -153,6 +204,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             name = getattr(dev, "name", slug)
             if INTENSITY_CAPS.intersection(caps):
                 entities.append(IntifaceIntensityNumber(coordinator, entry.entry_id, slug, name))
+            if "rotate" in caps:
+                entities.append(IntifaceRotationNumber(coordinator, entry.entry_id, slug, name))
             if "position" in caps or "position_with_duration" in caps:
                 entities.append(IntifacePositionNumber(coordinator, entry.entry_id, slug, name))
                 entities.append(IntifacePositionDurationNumber(coordinator, entry.entry_id, slug, name))

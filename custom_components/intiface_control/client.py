@@ -74,16 +74,24 @@ PRESSURE_INPUT = _enum(InputType, "Pressure")
 # gets used. New toys with any of these outputs work automatically, no
 # brand/name-specific code needed. Temperature and Spray are structurally
 # identical scalar (0-100%) actuators to the haptic ones, so they share
-# the same generic treatment (and can run wave/pulse patterns too). Led
-# is deliberately NOT here — it's exposed as its own `light` entity
-# instead (see light.py), since that's the idiomatic Home Assistant
-# model for a light, not another generic intensity slider.
+# the same generic treatment (and can run wave/pulse patterns too).
+#
+# Rotate is deliberately NOT here, even though it's structurally similar
+# — buttplug documents Rotate's value range as *signed* specifically to
+# represent direction (clockwise/counter-clockwise), which a 0-100%
+# unsigned slider can't express at all. It gets its own dedicated
+# -100..100 entity instead (see number.py's IntifaceRotationNumber).
+# Led is also deliberately NOT here — it's exposed as its own `light`
+# entity instead (see light.py), since that's the idiomatic Home
+# Assistant model for a light, not another generic intensity slider.
 INTENSITY_OUTPUT_PRIORITY = [
-    t for t in (OSCILLATE, VIBRATE, ROTATE, CONSTRICT, TEMPERATURE, SPRAY) if t is not None
+    t for t in (OSCILLATE, VIBRATE, CONSTRICT, TEMPERATURE, SPRAY) if t is not None
 ]
 
 # Named convenience methods on the device object, as a fallback for when
 # run_output() doesn't work or doesn't exist (older library versions).
+# Rotate is included here even though it's not in INTENSITY_OUTPUT_PRIORITY
+# above — apply_rotation() below still uses this same fallback via send().
 _METHOD_NAMES = {
     ot: name for ot, name in {
         OSCILLATE: "oscillate",
@@ -257,6 +265,21 @@ async def apply_intensity(dev, speed: float) -> bool:
                 ok = True
                 break
     return ok
+
+
+async def apply_rotation(dev, signed_speed: float) -> bool:
+    """signed_speed is a -1.0..1.0 fraction — positive is clockwise,
+    negative counter-clockwise, matching how buttplug documents Rotate's
+    value range as signed specifically to represent direction. Unlike
+    apply_intensity() above, only an EXACT zero stops the device — a
+    negative value is a real, valid command here, not "off", so the
+    same "speed<=0 means stop" shortcut would be wrong for this one."""
+    if ROTATE is None:
+        return False
+    if signed_speed == 0:
+        await stop_device(dev)
+        return True
+    return await send(dev, ROTATE, signed_speed)
 
 
 async def apply_led(dev, brightness: float) -> bool:

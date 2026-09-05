@@ -549,3 +549,39 @@ async def test_led_gate_behaviour_matches_other_commands(coordinator, fake_devic
     coordinator.async_clear_device_stop("led_toy")
     ok = await coordinator.async_apply_led("led_toy", 60)
     assert ok is True
+
+
+@pytest.mark.asyncio
+async def test_rotation_direction_is_preserved_end_to_end(coordinator, fake_device) -> None:
+    dev = fake_device("Rotator", outputs={bp.ROTATE})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+
+    ok = await coordinator.async_apply_rotation("rotator", 70)
+    assert ok is True
+    assert dev.sent[-1] == (bp.ROTATE, (0.7,))
+
+    dev.sent.clear()
+    ok = await coordinator.async_apply_rotation("rotator", -70)
+    assert ok is True
+    assert dev.sent[-1] == (bp.ROTATE, (-0.7,)), "negative rotation must reach the device unchanged"
+
+
+@pytest.mark.asyncio
+async def test_rotation_respects_both_gates(coordinator, fake_device) -> None:
+    dev = fake_device("Rotator", outputs={bp.ROTATE})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+
+    await coordinator.async_stop_device("rotator")
+    ok = await coordinator.async_apply_rotation("rotator", -50)
+    assert ok is False
+    coordinator.async_clear_device_stop("rotator")
+
+    await coordinator.async_stop_all()
+    ok = await coordinator.async_apply_rotation("rotator", -50)
+    assert ok is False
+    coordinator.async_clear_stop()
+
+    ok = await coordinator.async_apply_rotation("rotator", -50)
+    assert ok is True
