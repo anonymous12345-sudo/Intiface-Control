@@ -79,19 +79,23 @@ class IntifaceLed(CoordinatorEntity[IntifaceCoordinator], LightEntity):
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     coordinator: IntifaceCoordinator = hass.data[DOMAIN][entry.entry_id]
+    seen_slugs: set[str] = set()
 
     def _add_for_new_devices(new_devices) -> None:
-        entities = [
-            IntifaceLed(coordinator, entry.entry_id, slug, getattr(dev, "name", slug))
-            for slug, dev, caps in new_devices
-            if "led" in caps
-        ]
+        entities = []
+        for slug, dev, caps in new_devices:
+            if "led" not in caps or slug in seen_slugs:
+                continue
+            seen_slugs.add(slug)
+            entities.append(IntifaceLed(coordinator, entry.entry_id, slug, getattr(dev, "name", slug)))
         if entities:
             async_add_entities(entities)
 
+    # Listener registered BEFORE the snapshot — see number.py's
+    # async_setup_entry for the full reasoning.
+    coordinator.add_new_device_listener(_add_for_new_devices)
     initial = [
         (slug, info["device"], info["capabilities"])
         for slug, info in (coordinator.data or {}).items()
     ]
     _add_for_new_devices(initial)
-    coordinator.add_new_device_listener(_add_for_new_devices)

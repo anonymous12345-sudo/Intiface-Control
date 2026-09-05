@@ -307,6 +307,9 @@ Notes:
   sliders reset to 0 automatically, matching what the toy itself
   already did — not just when an emergency stop or a service call ends
   it early.
+- `stop_pattern` works even if the toy has gone offline since the
+  pattern started — the pattern task itself doesn't need a live
+  connection to be cancelled, only to actually command the toy.
 
 ## Adding new toys
 

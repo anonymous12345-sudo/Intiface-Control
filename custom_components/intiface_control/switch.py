@@ -102,21 +102,25 @@ class IntifaceEnableSwitch(CoordinatorEntity[IntifaceCoordinator], SwitchEntity)
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     coordinator: IntifaceCoordinator = hass.data[DOMAIN][entry.entry_id]
     async_add_entities([IntifaceStopAllSwitch(coordinator, entry.entry_id)])
+    seen_slugs: set[str] = set()
 
     def _add_for_new_devices(new_devices) -> None:
-        entities = [
-            IntifaceEnableSwitch(coordinator, entry.entry_id, slug, getattr(dev, "name", slug))
-            for slug, dev, caps in new_devices
-        ]
+        entities = []
+        for slug, dev, caps in new_devices:
+            if slug in seen_slugs:
+                continue
+            seen_slugs.add(slug)
+            entities.append(IntifaceEnableSwitch(coordinator, entry.entry_id, slug, getattr(dev, "name", slug)))
         if entities:
             async_add_entities(entities)
 
-    # Devices already known by the time this platform is set up need to
-    # be seeded explicitly here — see the identical pattern in number.py.
+    # Listener registered BEFORE the snapshot — see number.py's
+    # async_setup_entry for the full reasoning (closes a real gap where
+    # a device discovered between snapshot and registration would be
+    # missed until a full restart).
+    coordinator.add_new_device_listener(_add_for_new_devices)
     initial = [
         (slug, info["device"], info["capabilities"])
         for slug, info in (coordinator.data or {}).items()
     ]
     _add_for_new_devices(initial)
-
-    coordinator.add_new_device_listener(_add_for_new_devices)

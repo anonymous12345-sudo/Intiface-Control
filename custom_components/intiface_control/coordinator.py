@@ -339,12 +339,20 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
     def _devices_matching(self, slug: str) -> list:
         """The single device matching `slug`, wrapped in a list (for a
         uniform devs_getter() interface shared with the pattern
-        functions) — empty if the device isn't currently connected or is
-        under its own per-device stop. Re-evaluated fresh on every call
-        (not cached), so it stays correct even if the device reconnects
-        with a new object instance mid-pattern, or gets disabled via its
-        own Enabled switch mid-run."""
+        functions) — empty if the device isn't currently connected, is
+        under its own per-device stop, or the global stop switch is on.
+        Checking the global switch here too (not just relying on
+        async_stop_all() cancelling the pattern task) is a second,
+        cheap line of defense: even in the unlikely event a pattern
+        tick runs concurrently with the moment the global stop engages
+        but before its cancellation actually lands, this still refuses
+        to send anything. Re-evaluated fresh on every call (not
+        cached), so it stays correct even if the device reconnects with
+        a new object instance mid-pattern, or gets disabled via its own
+        Enabled switch mid-run."""
         slug = (slug or "").strip().lower()
+        if self.stopped:
+            return []
         if slug in self.per_slug_stopped:
             return []
         dev = self.get_device(slug)
@@ -559,13 +567,17 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         specific device's own stop switch is on. If duration_ms isn't
         given explicitly, uses whatever was last set via
         async_set_position_duration() for this slug (0/instant if never
-        set)."""
+        set). Cancels any pattern running on this slug first, same as
+        async_apply_intensity/async_apply_rotation — a direct command
+        overrides a running pattern rather than fighting it for control
+        of the same toy."""
         if self.stopped:
             _LOGGER.warning("Ignoring position command for %s: stop switch is on", slug)
             return False
         if slug in self.per_slug_stopped:
             _LOGGER.warning("Ignoring position command for %s: device stop switch is on", slug)
             return False
+        await self._cancel_pattern(slug)
         if duration_ms is None:
             duration_ms = self.get_position_duration(slug)
         duration_ms = int(_clamp(duration_ms, 0, 10000))

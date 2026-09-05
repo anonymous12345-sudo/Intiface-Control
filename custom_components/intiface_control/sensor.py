@@ -107,10 +107,14 @@ class IntifacePressureSensor(CoordinatorEntity[IntifaceCoordinator], SensorEntit
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     coordinator: IntifaceCoordinator = hass.data[DOMAIN][entry.entry_id]
+    seen_slugs: set[str] = set()
 
     def _add_for_new_devices(new_devices) -> None:
         entities = []
         for slug, dev, caps in new_devices:
+            if slug in seen_slugs:
+                continue
+            seen_slugs.add(slug)
             name = getattr(dev, "name", slug)
             if "battery" in caps:
                 entities.append(IntifaceBatterySensor(coordinator, entry.entry_id, slug, name))
@@ -121,9 +125,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         if entities:
             async_add_entities(entities)
 
+    # Listener registered BEFORE the snapshot — see number.py's
+    # async_setup_entry for the full reasoning.
+    coordinator.add_new_device_listener(_add_for_new_devices)
     initial = [
         (slug, info["device"], info["capabilities"])
         for slug, info in (coordinator.data or {}).items()
     ]
     _add_for_new_devices(initial)
-    coordinator.add_new_device_listener(_add_for_new_devices)

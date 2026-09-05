@@ -6,6 +6,33 @@ All notable changes to this project are documented here, per release.
 
 - Nothing yet.
 
+## [0.3.8]
+
+### Fixed
+
+- **`stop_pattern` (and the other pattern services) couldn't target a
+  toy that had gone offline.** Home Assistant's device picker still
+  lists an offline toy (its entities are kept on purpose), but
+  resolving that device_id back to a slug only checked currently-
+  connected devices — so a pattern running on a toy that dropped
+  offline mid-run couldn't be cancelled via the service until it
+  reconnected on its own. Now resolves against every slug ever seen
+  this session, matching what the device picker itself already shows.
+- **The global stop switch wasn't checked on every pattern tick,**
+  only relied on `async_stop_all()` successfully cancelling the
+  pattern's task. Now checked directly in the same place the per-toy
+  stop already was, as a second, cheap line of defense.
+- **`async_apply_position()` didn't cancel a running pattern** the way
+  `async_apply_intensity()`/`async_apply_rotation()` already did — a
+  position command used to leave a wave/pulse pattern still running
+  on the same toy instead of taking over control of it.
+- **A device discovered in the narrow gap between a platform taking
+  its initial device snapshot and registering its new-device listener
+  used to be missed entirely** until a full Home Assistant restart.
+  Every platform now registers its listener first, then takes the
+  snapshot — with per-platform deduplication so a device caught by
+  both doesn't get created twice.
+
 ## [0.3.7]
 
 ### Fixed

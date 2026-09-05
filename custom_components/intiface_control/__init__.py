@@ -61,14 +61,26 @@ def _resolve_device(hass: HomeAssistant, device_id: str) -> tuple[IntifaceCoordi
     identifier string apart on an assumed prefix boundary. Correctly
     handles more than one Intiface server being configured at once, and
     returns None for a device_id that isn't one of ours (e.g. it belongs
-    to a different integration, or was removed)."""
+    to a different integration, or was removed).
+
+    Deliberately checks coordinator.known_slugs (every slug ever seen
+    this session, never shrinks) rather than coordinator.data (only
+    currently-connected devices) — HA's device picker still lists a toy
+    that's gone offline (entities are kept on purpose, see the
+    Troubleshooting section in the README), and a service call targeting
+    it should resolve to the right slug too. This matters most for
+    stop_pattern specifically: the pattern task lives in
+    _active_patterns keyed by slug and doesn't need a live device object
+    at all to be cancelled — before this, a toy going offline mid-pattern
+    made that pattern uncancellable via the service until it reconnected
+    on its own."""
     registry = dr.async_get(hass)
     device_entry = registry.async_get(device_id)
     if device_entry is None:
         return None
     for coordinator in hass.data.get(DOMAIN, {}).values():
         entry_id = coordinator.config_entry.entry_id
-        for slug in coordinator.data or {}:
+        for slug in coordinator.known_slugs:
             if (DOMAIN, f"{entry_id}_{slug}") in device_entry.identifiers:
                 return coordinator, slug
     return None
@@ -90,9 +102,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 if resolved is None:
                     _LOGGER.warning(
                         "start_wave_pattern: device_id %s does not belong to any known "
-                        "Intiface Control toy (offline toys can't be targeted by "
-                        "device_id either — only currently-connected ones are known "
-                        "by slug); skipping it",
+                        "Intiface Control toy; skipping it",
                         device_id,
                     )
                     continue

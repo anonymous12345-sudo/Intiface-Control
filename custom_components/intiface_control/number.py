@@ -211,10 +211,14 @@ class IntifacePositionDurationNumber(CoordinatorEntity[IntifaceCoordinator], Num
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     coordinator: IntifaceCoordinator = hass.data[DOMAIN][entry.entry_id]
+    seen_slugs: set[str] = set()
 
     def _add_for_new_devices(new_devices) -> None:
         entities = []
         for slug, dev, caps in new_devices:
+            if slug in seen_slugs:
+                continue
+            seen_slugs.add(slug)
             name = getattr(dev, "name", slug)
             if INTENSITY_CAPS.intersection(caps):
                 entities.append(IntifaceIntensityNumber(coordinator, entry.entry_id, slug, name))
@@ -226,13 +230,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         if entities:
             async_add_entities(entities)
 
-    # Devices already known by the time this platform is set up (the
-    # coordinator's first refresh already ran in __init__.py, before any
-    # listener could be registered) need to be seeded explicitly here.
+    # Register the listener BEFORE taking the snapshot below, not after
+    # — registering afterward left a real gap: a device discovered by
+    # the coordinator's own background refresh between "snapshot taken"
+    # and "listener registered" gets marked known (coordinator.
+    # known_slugs) and is never notified about again, missing this
+    # platform's entities for it until a full restart. seen_slugs above
+    # deduplicates in case the same device is caught by both this
+    # listener and the snapshot below (harmless either way, just
+    # avoiding creating its entities twice).
+    coordinator.add_new_device_listener(_add_for_new_devices)
     initial = [
         (slug, info["device"], info["capabilities"])
         for slug, info in (coordinator.data or {}).items()
     ]
     _add_for_new_devices(initial)
-
-    coordinator.add_new_device_listener(_add_for_new_devices)

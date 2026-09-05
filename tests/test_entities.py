@@ -398,3 +398,97 @@ async def test_unknown_device_id_logs_warning_others_still_process(hass, setup_e
             blocking=True,
         )
     assert "not-a-real-device-id" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_stop_pattern_works_on_a_toy_that_has_gone_offline(hass, setup_entry, fake_device) -> None:
+    """Regression test: _resolve_device() used to only check
+    coordinator.data (currently-connected devices), so a toy that went
+    offline mid-pattern couldn't be targeted by device_id at all —
+    including for stop_pattern, whose pattern task lives in
+    _active_patterns keyed by slug and doesn't need a live device object
+    to be cancelled. Before this fix, the only way to stop that pattern
+    was to wait for the toy to reconnect on its own."""
+    from homeassistant.helpers import device_registry as dr
+
+    coordinator = hass.data[DOMAIN][setup_entry.entry_id]
+    hush = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    coordinator._bp_client.devices = {0: hush}
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    registry = dr.async_get(hass)
+    device_entry = registry.async_get_device(identifiers={(DOMAIN, f"{setup_entry.entry_id}_lovense_hush")})
+    assert device_entry is not None
+
+    await hass.services.async_call(
+        DOMAIN, "start_wave_pattern",
+        {"device_id": [device_entry.id], "repeat": 1, "min_speed": 10, "max_speed": 90, "duration": 10},
+        blocking=True,
+    )
+    assert "lovense_hush" in coordinator._active_patterns
+
+    # The toy goes offline — its own entities go unavailable, but the
+    # HA device (and this device_id) stays in the registry on purpose.
+    coordinator._bp_client.devices = {}
+    await coordinator.async_refresh()
+    assert "lovense_hush" not in coordinator.data
+
+    # stop_pattern targeting that same device_id must still work.
+    await hass.services.async_call(
+        DOMAIN, "stop_pattern",
+        {"device_id": [device_entry.id]},
+        blocking=True,
+    )
+    assert "lovense_hush" not in coordinator._active_patterns, (
+        "stop_pattern must be able to cancel a pattern task for an offline toy"
+    )
+
+
+@pytest.mark.asyncio
+async def test_new_device_listener_registered_before_initial_snapshot(hass, setup_entry, fake_device) -> None:
+    """Regression test: every platform used to take its initial
+    "already-known devices" snapshot BEFORE registering its new-device
+    listener. A device discovered by the coordinator's own background
+    refresh in that exact gap got marked known (coordinator.known_slugs)
+    and was never notified about again — permanently missing that
+    platform's entities for it until a full Home Assistant restart.
+    Registering the listener first closes the gap; per-platform
+    deduplication (seen_slugs) prevents the same device from getting
+    double entities if it's caught by both the listener and the
+    snapshot."""
+    coordinator = hass.data[DOMAIN][setup_entry.entry_id]
+    hush = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    coordinator._bp_client.devices = {0: hush}
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    # A second device appears; unloading and re-forwarding just the
+    # number platform (not the whole entry) exercises async_setup_entry
+    # again against the SAME already-populated coordinator — the
+    # scenario where the ordering fix actually matters.
+    hismith = fake_device("Hismith Sex Machine", outputs={bp.OSCILLATE})
+    coordinator._bp_client.devices = {0: hush, 1: hismith}
+
+    original_add_listener = coordinator.add_new_device_listener
+
+    def patched_add_listener(cb):
+        unsub = original_add_listener(cb)
+        # Simulates the coordinator's own background refresh landing in
+        # the exact gap this fix closes — right after the listener is
+        # registered, before the platform takes its own snapshot.
+        hass.async_create_task(coordinator.async_refresh())
+        return unsub
+
+    coordinator.add_new_device_listener = patched_add_listener
+
+    await hass.config_entries.async_unload_platforms(setup_entry, ["number"])
+    await hass.config_entries.async_forward_entry_setups(setup_entry, ["number"])
+    await hass.async_block_till_done()
+
+    assert hass.states.get("number.hismith_sex_machine_intensity") is not None, (
+        "a device discovered in the gap between listener registration and the "
+        "initial snapshot must not be missed"
+    )
+    # No duplicate entity_id suffix (_2 etc) for the toy that was already there.
+    assert hass.states.get("number.lovense_hush_intensity_2") is None

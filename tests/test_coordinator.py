@@ -733,3 +733,44 @@ async def test_lone_device_that_never_collided_keeps_the_plain_slug_across_recon
     coordinator._bp_client.devices = {0: dev}
     await coordinator.async_refresh()
     assert list(coordinator.data) == ["hismith_sex_machine"]
+
+
+@pytest.mark.asyncio
+async def test_devices_matching_respects_global_stop(coordinator, fake_device) -> None:
+    """Regression test: _devices_matching() only checked per_slug_stopped,
+    never the global stop switch — meaning a pattern tick loop had no
+    second line of defense against the global stop beyond
+    async_stop_all() successfully cancelling its task. Checking it here
+    too means even a tick that somehow runs concurrently with the stop
+    engaging still sends nothing."""
+    dev = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+
+    assert coordinator._devices_matching("lovense_hush") == [dev]
+    coordinator.stopped = True
+    assert coordinator._devices_matching("lovense_hush") == []
+    coordinator.stopped = False
+    assert coordinator._devices_matching("lovense_hush") == [dev]
+
+
+@pytest.mark.asyncio
+async def test_apply_position_cancels_running_pattern(coordinator, fake_device) -> None:
+    """Regression test: async_apply_intensity/async_apply_rotation both
+    cancel a running pattern before applying a direct command — a
+    direct command overriding a pattern rather than fighting it for
+    control of the same toy. async_apply_position never did this,
+    despite its sibling async_apply_rotation's own docstring claiming
+    otherwise ("same as intensity/position do")."""
+    dev = fake_device("Stroker", outputs={bp.POSITION})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+
+    task = asyncio.ensure_future(asyncio.sleep(100))
+    coordinator._active_patterns["stroker"] = task
+
+    ok = await coordinator.async_apply_position("stroker", 50)
+
+    assert ok is True
+    assert "stroker" not in coordinator._active_patterns
+    assert task.cancelled()
