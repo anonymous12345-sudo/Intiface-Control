@@ -97,15 +97,38 @@ def test_get_capabilities_excludes_battery_when_absent(fake_device) -> None:
 
 def test_intensity_output_type_picks_supported_type(fake_device) -> None:
     dev = fake_device("Rotator", outputs={bp.ROTATE})
-    assert bp.intensity_output_type(dev) == bp.ROTATE
+    assert bp.intensity_output_type(dev) is None, (
+        "ROTATE must never be picked as an intensity output — it has its "
+        "own signed -100..100 entity since 0.3.1, precisely because "
+        "folding it into the unsigned Intensity slider made its direction "
+        "uncontrollable."
+    )
+
+
+def test_intensity_output_type_picks_supported_non_rotate_type(fake_device) -> None:
+    dev = fake_device("Constrictor", outputs={bp.CONSTRICT})
+    assert bp.intensity_output_type(dev) == bp.CONSTRICT
+
+
+@pytest.mark.asyncio
+async def test_apply_intensity_returns_false_for_rotate_only_device(fake_device) -> None:
+    """Regression test for the 0.3.1 rotation fix: a device with only
+    ROTATE must not be drivable via apply_intensity() at all — it has no
+    fallback output type left to use once ROTATE is excluded from
+    INTENSITY_OUTPUT_PRIORITY, so this must fail closed (False), not
+    silently fall back to sending an unsigned value to ROTATE."""
+    dev = fake_device("Rotator", outputs={bp.ROTATE})
+    ok = await bp.apply_intensity(dev, 0.42)
+    assert ok is False
+    assert dev.sent == []
 
 
 @pytest.mark.asyncio
 async def test_apply_intensity_routes_to_the_right_output(fake_device) -> None:
-    dev = fake_device("Rotator", outputs={bp.ROTATE})
+    dev = fake_device("Constrictor", outputs={bp.CONSTRICT})
     ok = await bp.apply_intensity(dev, 0.42)
     assert ok is True
-    assert dev.sent == [(bp.ROTATE, (0.42,))]
+    assert dev.sent == [(bp.CONSTRICT, (0.42,))]
 
 
 @pytest.mark.asyncio

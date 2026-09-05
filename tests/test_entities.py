@@ -138,6 +138,10 @@ async def test_stop_switch_blocks_slider_commands_while_on(hass, setup_entry, fa
         blocking=True,
     )
     assert dev.sent == [], "no command should reach the device while the stop switch is on"
+    assert hass.states.get("number.lovense_hush_intensity").state == "0.0", (
+        "a refused command must not leave the dashboard showing a value the "
+        "toy never actually reached"
+    )
 
     await hass.services.async_call(
         "switch", "turn_off", {"entity_id": "switch.stop_all_toys"}, blocking=True
@@ -148,6 +152,7 @@ async def test_stop_switch_blocks_slider_commands_while_on(hass, setup_entry, fa
         blocking=True,
     )
     assert dev.sent == [(bp.VIBRATE, (0.7,))], "command should work again once unstopped"
+    assert hass.states.get("number.lovense_hush_intensity").state == "70.0"
 
 
 @pytest.mark.asyncio
@@ -314,6 +319,51 @@ async def test_rotation_slider_end_to_end(hass, setup_entry, fake_device) -> Non
     assert hass.states.get("number.rotator_intensity") is None, "rotate must not create an Intensity entity"
     assert hass.states.get("number.rotator_rotation") is not None
 
+    await hass.services.async_call(
+        "number", "set_value",
+        {"entity_id": "number.rotator_rotation", "value": -80},
+        blocking=True,
+    )
+    assert hass.states.get("number.rotator_rotation").state == "-80.0"
+    assert dev.sent[-1] == (bp.ROTATE, (-0.8,))
+
+
+@pytest.mark.asyncio
+async def test_refused_rotation_and_position_commands_reset_to_zero(hass, setup_entry, fake_device) -> None:
+    """Same regression as test_stop_switch_blocks_slider_commands_while_on
+    above, for the other two entities that can be gated: a refused
+    command must never leave the dashboard showing a value the toy
+    never actually reached."""
+    coordinator = hass.data[DOMAIN][setup_entry.entry_id]
+    dev = fake_device(
+        "Rotator", outputs={bp.ROTATE, bp.POSITION, bp.POSITION_WITH_DURATION}
+    )
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": "switch.stop_all_toys"}, blocking=True
+    )
+    dev.sent.clear()
+
+    await hass.services.async_call(
+        "number", "set_value",
+        {"entity_id": "number.rotator_rotation", "value": -80},
+        blocking=True,
+    )
+    await hass.services.async_call(
+        "number", "set_value",
+        {"entity_id": "number.rotator_position", "value": 80},
+        blocking=True,
+    )
+    assert dev.sent == [], "no command should reach the device while the stop switch is on"
+    assert hass.states.get("number.rotator_rotation").state == "0.0"
+    assert hass.states.get("number.rotator_position").state == "0.0"
+
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": "switch.stop_all_toys"}, blocking=True
+    )
     await hass.services.async_call(
         "number", "set_value",
         {"entity_id": "number.rotator_rotation", "value": -80},

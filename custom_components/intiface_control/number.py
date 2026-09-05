@@ -69,9 +69,9 @@ class IntifaceIntensityNumber(CoordinatorEntity[IntifaceCoordinator], NumberEnti
         return super().available and self._slug in (self.coordinator.data or {})
 
     async def async_set_native_value(self, value: float) -> None:
-        self._attr_native_value = value
+        ok = await self.coordinator.async_apply_intensity(self._slug, value)
+        self._attr_native_value = value if ok else 0.0
         self.async_write_ha_state()
-        await self.coordinator.async_apply_intensity(self._slug, value)
 
 
 class IntifaceRotationNumber(CoordinatorEntity[IntifaceCoordinator], NumberEntity):
@@ -117,9 +117,9 @@ class IntifaceRotationNumber(CoordinatorEntity[IntifaceCoordinator], NumberEntit
         return super().available and self._slug in (self.coordinator.data or {})
 
     async def async_set_native_value(self, value: float) -> None:
-        self._attr_native_value = value
+        ok = await self.coordinator.async_apply_rotation(self._slug, value)
+        self._attr_native_value = value if ok else 0.0
         self.async_write_ha_state()
-        await self.coordinator.async_apply_rotation(self._slug, value)
 
 
 class IntifacePositionNumber(CoordinatorEntity[IntifaceCoordinator], NumberEntity):
@@ -155,9 +155,9 @@ class IntifacePositionNumber(CoordinatorEntity[IntifaceCoordinator], NumberEntit
         return super().available and self._slug in (self.coordinator.data or {})
 
     async def async_set_native_value(self, value: float) -> None:
-        self._attr_native_value = value
+        ok = await self.coordinator.async_apply_position(self._slug, value)
+        self._attr_native_value = value if ok else 0.0
         self.async_write_ha_state()
-        await self.coordinator.async_apply_position(self._slug, value)
 
 
 class IntifacePositionDurationNumber(CoordinatorEntity[IntifaceCoordinator], NumberEntity):
