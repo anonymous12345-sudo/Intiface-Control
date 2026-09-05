@@ -29,7 +29,8 @@
       }
     },
     "error": {
-      "cannot_connect": "Could not connect to Intiface at that URL."
+      "cannot_connect": "Could not connect to Intiface at that URL.",
+      "already_configured": "Another Intiface Control entry is already using this URL."
     }
   },
   "entity": {

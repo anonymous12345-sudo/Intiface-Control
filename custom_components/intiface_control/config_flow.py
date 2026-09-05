@@ -84,20 +84,39 @@ class IntifaceOptionsFlow(config_entries.OptionsFlow):
             url = user_input[CONF_URL].strip()
             fallback = (user_input.get(CONF_FALLBACK_URL) or "").strip()
 
-            try:
-                await _test_connection(url)
-            except Exception:
-                _LOGGER.debug("Connection test failed", exc_info=True)
-                errors["base"] = "cannot_connect"
-            else:
-                new_data = {
-                    **self.config_entry.data,
-                    CONF_URL: url,
-                    CONF_FALLBACK_URL: fallback or None,
-                }
-                self.hass.config_entries.async_update_entry(self.config_entry, data=new_data)
-                await self.hass.config_entries.async_reload(self.config_entry.entry_id)
-                return self.async_create_entry(title="", data={})
+            # A config entry's unique_id is the URL it was originally set
+            # up with (see IntifaceConfigFlow.async_step_user above). If
+            # we update this entry's data/URL without also updating its
+            # unique_id, this entry keeps pointing at a URL that no
+            # longer matches its own unique_id — meaning a *second*
+            # config entry could later be added for that same new URL
+            # without Home Assistant recognizing it as a duplicate, and
+            # now two entries (two coordinators, two full sets of
+            # entities) both talk to the same Intiface server. Guard
+            # against that directly: refuse if some *other* entry
+            # already claims this URL as its unique_id.
+            for other_entry in self.hass.config_entries.async_entries(DOMAIN):
+                if other_entry.entry_id != self.config_entry.entry_id and other_entry.unique_id == url:
+                    errors["base"] = "already_configured"
+                    break
+
+            if not errors:
+                try:
+                    await _test_connection(url)
+                except Exception:
+                    _LOGGER.debug("Connection test failed", exc_info=True)
+                    errors["base"] = "cannot_connect"
+                else:
+                    new_data = {
+                        **self.config_entry.data,
+                        CONF_URL: url,
+                        CONF_FALLBACK_URL: fallback or None,
+                    }
+                    self.hass.config_entries.async_update_entry(
+                        self.config_entry, data=new_data, unique_id=url
+                    )
+                    await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+                    return self.async_create_entry(title="", data={})
 
         current = self.config_entry.data
         schema = vol.Schema(

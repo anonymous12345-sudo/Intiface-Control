@@ -139,3 +139,85 @@ async def test_options_flow_connection_failure_leaves_url_unchanged(hass) -> Non
     assert options_result["type"] == FlowResultType.FORM
     assert options_result["errors"] == {"base": "cannot_connect"}
     assert entry.data[CONF_URL] == "ws://old:12345", "a failed connection test must not change the stored URL"
+
+
+@pytest.mark.asyncio
+async def test_options_flow_updates_unique_id_along_with_url(hass) -> None:
+    """Regression test: the options flow used to update entry.data's URL
+    without also updating the entry's own unique_id (which is set to the
+    URL at initial setup). Left unfixed, a second config entry could
+    later be created for that same new URL without Home Assistant
+    recognizing it as a duplicate — two entries, two coordinators, both
+    talking to the same Intiface server."""
+    with patch(
+        "custom_components.intiface_control.config_flow._test_connection",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_URL: "ws://old:12345"}
+        )
+        entry = hass.config_entries.async_entries(DOMAIN)[0]
+        await hass.async_block_till_done()
+        assert entry.unique_id == "ws://old:12345"
+
+        options_result = await hass.config_entries.options.async_init(entry.entry_id)
+        await hass.config_entries.options.async_configure(
+            options_result["flow_id"], {CONF_URL: "ws://new:12345"}
+        )
+        await hass.async_block_till_done()
+
+    assert entry.unique_id == "ws://new:12345", "unique_id must move with the URL, not stay pointed at the old one"
+
+    # With unique_id correctly updated, trying to add a fresh entry for
+    # the URL this one just gave up now succeeds normally (nothing else
+    # claims it) — confirming the old URL was actually released, not
+    # just duplicated.
+    with patch(
+        "custom_components.intiface_control.config_flow._test_connection",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_URL: "ws://old:12345"}
+        )
+    assert result["type"] == FlowResultType.CREATE_ENTRY
+
+
+@pytest.mark.asyncio
+async def test_options_flow_refuses_url_already_used_by_another_entry(hass) -> None:
+    with patch(
+        "custom_components.intiface_control.config_flow._test_connection",
+        new=AsyncMock(return_value=None),
+    ):
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_URL: "ws://first:12345"}
+        )
+        result = await hass.config_entries.flow.async_init(
+            DOMAIN, context={"source": config_entries.SOURCE_USER}
+        )
+        await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_URL: "ws://second:12345"}
+        )
+        await hass.async_block_till_done()
+
+        entries = hass.config_entries.async_entries(DOMAIN)
+        second_entry = next(e for e in entries if e.unique_id == "ws://second:12345")
+
+        options_result = await hass.config_entries.options.async_init(second_entry.entry_id)
+        # Trying to point the second entry at the URL the first entry
+        # already owns must be refused, not silently create a duplicate.
+        options_result = await hass.config_entries.options.async_configure(
+            options_result["flow_id"], {CONF_URL: "ws://first:12345"}
+        )
+
+    assert options_result["type"] == FlowResultType.FORM
+    assert options_result["errors"] == {"base": "already_configured"}
+    assert second_entry.data[CONF_URL] == "ws://second:12345", "the refused change must not have been applied"
