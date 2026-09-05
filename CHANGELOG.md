@@ -6,6 +6,20 @@ All notable changes to this project are documented here, per release.
 
 - Nothing yet.
 
+## [0.3.2]
+
+### Fixed
+
+- **Unknown `device_id` in a pattern service call now logs a clear
+  warning** instead of silently doing nothing — a typo'd or stale
+  `device_id` used to be indistinguishable from success. Other,
+  resolvable devices in the same multi-device call are unaffected and
+  still processed normally.
+- README: two leftovers from earlier renames/refactors — "copy the
+  entire `buttplug` folder" (should say `intiface_control`), and a
+  description of the Enabled switch referencing the removed `all`/
+  `both` pattern-targeting model.
+
 ## [0.3.1]
 
 ### Fixed

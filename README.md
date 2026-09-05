@@ -91,7 +91,7 @@ if that's you.
 
 1. Download this repository (or just the `custom_components/intiface_control`
    folder).
-2. Copy the **entire `buttplug` folder** into your Home Assistant
+2. Copy the **entire `intiface_control` folder** into your Home Assistant
    config directory, so you end up with:
    ```
    config/custom_components/intiface_control/manifest.json
@@ -185,13 +185,13 @@ normal availability rather than a stop button.
 - **On** (the default for a newly connected toy) means it responds to
   commands normally.
 - **Turning it off** immediately stops that one toy, cancels any pattern
-  running specifically on it, and refuses further commands to it — same
-  gate mechanism as the global switch, just scoped to one device and
+  running on it, and refuses further commands to it — same gate
+  mechanism as the global switch, just scoped to one device and
   inverted so a toy is usable right away rather than needing to be
-  un-stopped first. If a background pattern is running on `all`/`both`,
-  the disabled toy is silently excluded from it (the pattern keeps
-  running normally for every other toy) without needing to restart
-  anything.
+  un-stopped first. If you started a pattern on several toys at once
+  (the device selector supports picking more than one), each toy gets
+  its own independent pattern — disabling one only cancels that toy's
+  own pattern, the others keep running normally.
 - The two gates are fully independent: disabling one toy doesn't affect
   any other toy or the global switch, and the global switch stopping
   everything doesn't change any toy's own Enabled state.

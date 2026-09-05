@@ -371,3 +371,28 @@ async def test_refused_rotation_and_position_commands_reset_to_zero(hass, setup_
     )
     assert hass.states.get("number.rotator_rotation").state == "-80.0"
     assert dev.sent[-1] == (bp.ROTATE, (-0.8,))
+
+
+@pytest.mark.asyncio
+async def test_unknown_device_id_logs_warning_others_still_process(hass, setup_entry, fake_device, caplog) -> None:
+    """Regression test: an unresolvable device_id in a multi-device
+    service call used to fail silently (bare `continue`, no log, no
+    error) — you couldn't tell a typo/stale device_id apart from
+    success. It must now log a clear warning, while any other,
+    resolvable device in the same call still gets processed normally."""
+    coordinator = hass.data[DOMAIN][setup_entry.entry_id]
+    dev = fake_device("Lovense Hush", outputs={bp.VIBRATE})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    with caplog.at_level("WARNING", logger="custom_components.intiface_control"):
+        await hass.services.async_call(
+            DOMAIN, "start_wave_pattern",
+            {
+                "device_id": ["not-a-real-device-id"],
+                "repeat": 1, "min_speed": 10, "max_speed": 90, "duration": 1,
+            },
+            blocking=True,
+        )
+    assert "not-a-real-device-id" in caplog.text

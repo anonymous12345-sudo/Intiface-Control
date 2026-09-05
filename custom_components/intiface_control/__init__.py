@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -10,6 +12,8 @@ from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN
 from .coordinator import IntifaceCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = ["number", "binary_sensor", "sensor", "switch", "light"]
 
@@ -84,6 +88,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             for device_id in call.data["device_id"]:
                 resolved = _resolve_device(hass, device_id)
                 if resolved is None:
+                    _LOGGER.warning(
+                        "start_wave_pattern: device_id %s does not belong to any known "
+                        "Intiface Control toy (offline toys can't be targeted by "
+                        "device_id either — only currently-connected ones are known "
+                        "by slug); skipping it",
+                        device_id,
+                    )
                     continue
                 target_coordinator, slug = resolved
                 await target_coordinator.async_start_wave_pattern(
@@ -98,6 +109,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             for device_id in call.data["device_id"]:
                 resolved = _resolve_device(hass, device_id)
                 if resolved is None:
+                    _LOGGER.warning(
+                        "start_pulse_pattern: device_id %s does not belong to any "
+                        "known Intiface Control toy; skipping it",
+                        device_id,
+                    )
                     continue
                 target_coordinator, slug = resolved
                 await target_coordinator.async_start_pulse_pattern(
@@ -113,6 +129,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             for device_id in call.data["device_id"]:
                 resolved = _resolve_device(hass, device_id)
                 if resolved is None:
+                    _LOGGER.warning(
+                        "stop_pattern: device_id %s does not belong to any known "
+                        "Intiface Control toy; skipping it",
+                        device_id,
+                    )
                     continue
                 target_coordinator, slug = resolved
                 await target_coordinator.async_stop_pattern(slug)
