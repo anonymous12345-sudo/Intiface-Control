@@ -241,7 +241,10 @@ async def test_pattern_start_and_stop(coordinator, fake_device) -> None:
     await asyncio.sleep(1.3)
 
     assert len(dev.sent) > 3, "expected several commands during a 1s wave pattern"
-    assert dev.sent[-1] == ("STOP", None), "pattern should stop the device when it finishes"
+    assert dev.sent[-1] == (bp.VIBRATE, (0.0,)), (
+        "pattern cleanup should zero its own output (VIBRATE here), not call a full "
+        "device-wide stop that would also silence any other independent actuator"
+    )
 
 
 @pytest.mark.asyncio

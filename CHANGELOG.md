@@ -6,6 +6,23 @@ All notable changes to this project are documented here, per release.
 
 - Nothing yet.
 
+## [0.3.4]
+
+### Fixed
+
+- **Intensity/Rotation reaching 0, and a pattern ending, no longer
+  silence the whole device.** On a combined vibrate+rotate device (or
+  any other device with more than one independently-controlled
+  actuator), the intensity slider hitting 0 used to call a full
+  device-wide stop — which also killed rotation, even though the
+  intensity slider was never driving it. Same issue for rotation
+  reaching 0, and for a wave/pulse pattern's own cleanup when it ends.
+  All three now zero out only the specific output they're actually
+  driving, leaving any other actuator on the same device untouched.
+  The genuine emergency-stop paths (the global and per-toy stop
+  switches) are unaffected — a real stop still silences everything on
+  the device, as it should.
+
 ## [0.3.3]
 
 ### Fixed

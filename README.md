@@ -179,6 +179,15 @@ connected toy.
   itself — the next slider move or service call is what starts a toy
   again.
 
+Note the contrast with an ordinary slider reaching 0 on its own (not
+via one of these switches), or a pattern ending on its own: both only
+zero out the specific output actually being driven (e.g. Intensity
+going to 0, or a pattern running out its repeats, only touches
+vibrate/oscillate/whichever it's using), leaving any other
+independently-running actuator on the same combined device —
+rotation, LED — completely untouched. Only these two switches are
+meant to affect the whole device at once.
+
 **`switch.<toy>_enabled`** — one per toy, framed the other way round as
 normal availability rather than a stop button.
 

@@ -249,7 +249,9 @@ async def test_wave_pattern_service_via_real_device_registry(hass, setup_entry, 
     speeds = [v[0] for _, v in hush.sent[:-1]]
     assert speeds[0] == pytest.approx(0.1, abs=0.01)
     assert max(speeds) > 0.85
-    assert hush.sent[-1] == ("STOP", None)
+    assert hush.sent[-1] == (bp.VIBRATE, (0.0,)), (
+        "pattern cleanup zeroes its own output (VIBRATE), not a full device-wide stop"
+    )
 
 
 @pytest.mark.asyncio

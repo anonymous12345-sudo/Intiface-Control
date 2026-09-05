@@ -132,11 +132,16 @@ async def test_apply_intensity_routes_to_the_right_output(fake_device) -> None:
 
 
 @pytest.mark.asyncio
-async def test_apply_intensity_zero_stops_device(fake_device) -> None:
+async def test_apply_intensity_zero_targets_vibrate_not_full_stop(fake_device) -> None:
+    """Even a single-output device now gets a targeted zero (VIBRATE,
+    0.0) rather than a full stop_device() call — the targeted approach
+    is strictly more correct everywhere, not just for multi-actuator
+    devices, and there's no reason to special-case the single-output
+    case back to the blunter call."""
     dev = fake_device("Hush", outputs={bp.VIBRATE})
     ok = await bp.apply_intensity(dev, 0.0)
     assert ok is True
-    assert dev.sent == [("STOP", None)]
+    assert dev.sent == [(bp.VIBRATE, (0.0,))]
 
 
 @pytest.mark.asyncio
@@ -255,3 +260,57 @@ def test_rotate_is_not_folded_into_intensity_priority() -> None:
     unsigned Intensity slider — it must never appear in the priority
     list used to pick an intensity output type."""
     assert bp.ROTATE not in bp.INTENSITY_OUTPUT_PRIORITY
+
+
+@pytest.mark.asyncio
+async def test_intensity_zero_targets_only_its_own_output_not_a_full_stop(fake_device) -> None:
+    """Regression test: a combined vibrate+rotate device used to have
+    its intensity slider reaching 0 call a full stop_device() — which
+    also silences any other actuator (rotation) running independently
+    on the same physical device. It must now zero out only the
+    intensity output it's actually driving."""
+    dev = fake_device("Combo Toy", outputs={bp.VIBRATE, bp.ROTATE})
+    await bp.apply_rotation(dev, 0.6)  # independent rotation, running before intensity touches 0
+    dev.sent.clear()
+
+    ok = await bp.apply_intensity(dev, 0.0)
+    assert ok is True
+    assert dev.sent == [(bp.VIBRATE, (0.0,))]
+    assert ("STOP", None) not in dev.sent, "must not call the full device-wide stop"
+
+
+@pytest.mark.asyncio
+async def test_rotation_zero_targets_only_rotate_not_a_full_stop(fake_device) -> None:
+    dev = fake_device("Combo Toy", outputs={bp.VIBRATE, bp.ROTATE})
+    await bp.apply_intensity(dev, 0.5)  # independent intensity, running before rotation touches 0
+    dev.sent.clear()
+
+    ok = await bp.apply_rotation(dev, 0.0)
+    assert ok is True
+    assert dev.sent == [(bp.ROTATE, (0.0,))]
+    assert ("STOP", None) not in dev.sent
+
+
+@pytest.mark.asyncio
+async def test_intensity_zero_falls_back_to_full_stop_with_no_usable_output(fake_device) -> None:
+    """A device with no intensity-capable output at all (e.g. only LED)
+    has nothing more specific to target, so the old full-stop fallback
+    is still correct there."""
+    dev = fake_device("LED-only Toy", outputs={bp.LED})
+    ok = await bp.apply_intensity(dev, 0.0)
+    assert ok is True
+    assert dev.sent == [("STOP", None)]
+
+
+@pytest.mark.asyncio
+async def test_pattern_cleanup_does_not_silence_independent_rotation(fake_device) -> None:
+    """Same regression as the two tests above, for the pattern-cleanup
+    path: a wave/pulse pattern's own finally-block used to call a full
+    stop_device() too."""
+    dev = fake_device("Combo Toy", outputs={bp.VIBRATE, bp.ROTATE})
+    await bp.apply_rotation(dev, 0.6)
+
+    await bp.run_wave_pattern(lambda: [dev], "test", repeat=1, min_speed=0.1, max_speed=0.5, duration=0.5)
+
+    assert ("STOP", None) not in dev.sent
+    assert dev.sent[-1] == (bp.VIBRATE, (0.0,)), "pattern cleanup must zero its own output, not stop the device"

@@ -242,6 +242,14 @@ async def send(dev, output_type, intensity: float) -> bool:
 
 
 async def stop_device(dev) -> None:
+    """Full device-wide stop — every actuator, regardless of what's
+    currently running on which output. This is the right tool for a
+    genuine emergency stop (the global/per-device stop switches use
+    this, appropriately), but too blunt for an ordinary "this one
+    slider reached 0" moment: a combined vibrate+rotate device would
+    have its rotation killed by its intensity slider going to 0, and
+    vice versa. See _stop_intensity_only() below for that narrower
+    case."""
     try:
         if hasattr(dev, "stop"):
             await dev.stop()
@@ -249,11 +257,30 @@ async def stop_device(dev) -> None:
         _LOGGER.warning("stop failed on %s", getattr(dev, "name", "?"), exc_info=True)
 
 
+async def _stop_intensity_only(dev) -> None:
+    """Zeroes out just this device's intensity output (whichever one
+    intensity_output_type() picks for it) instead of calling
+    stop_device(), which would also silence any other, independently-
+    controlled actuator on the same physical device — rotation, LED,
+    position — that this particular command was never about. Falls
+    back to a full stop_device() only when the device has no usable
+    intensity output to target this specifically (nothing more precise
+    is possible in that case)."""
+    output_type = intensity_output_type(dev)
+    if output_type is not None:
+        await send(dev, output_type, 0.0)
+    else:
+        await stop_device(dev)
+
+
 async def apply_intensity(dev, speed: float) -> bool:
     """speed is a 0.0-1.0 fraction; applies it via whichever intensity
-    output type the device supports, or stops it if speed<=0."""
+    output type the device supports, or zeroes just that output if
+    speed<=0 — not a full stop_device(), which would also affect any
+    other actuator (e.g. rotation) running independently on the same
+    device."""
     if speed <= 0:
-        await stop_device(dev)
+        await _stop_intensity_only(dev)
         return True
 
     output_type = intensity_output_type(dev)
@@ -273,12 +300,14 @@ async def apply_rotation(dev, signed_speed: float) -> bool:
     value range as signed specifically to represent direction. Unlike
     apply_intensity() above, only an EXACT zero stops the device — a
     negative value is a real, valid command here, not "off", so the
-    same "speed<=0 means stop" shortcut would be wrong for this one."""
+    same "speed<=0 means stop" shortcut would be wrong for this one.
+    Zeroing the Rotate output specifically (not stop_device()) leaves
+    any independently-running intensity/LED output on the same device
+    untouched."""
     if ROTATE is None:
         return False
     if signed_speed == 0:
-        await stop_device(dev)
-        return True
+        return await send(dev, ROTATE, 0.0)
     return await send(dev, ROTATE, signed_speed)
 
 
@@ -440,7 +469,7 @@ async def run_wave_pattern(devs_getter, target_label: str, repeat: int, min_spee
         _LOGGER.info("Wave pattern for %s was cancelled.", target_label)
     finally:
         for dev in devs_getter():
-            await stop_device(dev)
+            await _stop_intensity_only(dev)
 
 
 async def run_pulse_pattern(
@@ -457,4 +486,4 @@ async def run_pulse_pattern(
         _LOGGER.info("Pulse pattern for %s was cancelled.", target_label)
     finally:
         for dev in devs_getter():
-            await stop_device(dev)
+            await _stop_intensity_only(dev)
