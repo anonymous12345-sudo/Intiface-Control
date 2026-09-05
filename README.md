@@ -58,7 +58,7 @@ For every connected toy, grouped under one Home Assistant **device**:
 | `number` — Intensity | Device supports vibrate, oscillate, rotate, or constrict | 0–100% slider. Automatically uses whichever of those four output types the device actually supports. |
 | `number` — Position | Device supports Position or PositionWithDuration | 0–100% slider for linear devices (e.g. a stroker). Moves immediately; no in-UI duration control in this version. |
 | `binary_sensor` — Connected | Always | Reflects whether the toy is currently reachable through Intiface. |
-| `sensor` — Battery | Device reports a battery level | Battery percentage. |
+| `sensor` — Battery | Device reports a battery level | Battery percentage, polled every 60s (independently of the general 5s device refresh) — a level that only moves over hours doesn't need a network round-trip every cycle. A newly connected (or reconnected) device always gets its first reading immediately, never waiting out that interval. |
 | `switch` — Enabled | Always | On (the default) means this toy responds normally; turning it off immediately stops it and refuses further commands until switched back on. See [The emergency stop switch](#the-emergency-stop-switch) below. |
 
 Plus, once per Home Assistant config entry (i.e. once per Intiface

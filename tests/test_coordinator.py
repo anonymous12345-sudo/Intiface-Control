@@ -422,3 +422,42 @@ async def test_repair_issue_cleared_on_shutdown(hass, monkeypatch) -> None:
 
     await coord.async_shutdown_client()
     assert issue_reg.async_get_issue(DOMAIN, f"cannot_connect_{entry.entry_id}") is None
+
+
+@pytest.mark.asyncio
+async def test_battery_polled_immediately_for_a_new_device(coordinator, fake_device) -> None:
+    """A device must never show as connected without a battery value
+    just because the 60s battery-poll interval hasn't elapsed yet."""
+    dev = fake_device("Lovense Hush", outputs={bp.VIBRATE}, battery=0.9)
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+
+    assert coordinator.data["lovense_hush"]["battery"] == 90.0
+
+
+@pytest.mark.asyncio
+async def test_battery_not_repolled_within_the_interval(coordinator, fake_device) -> None:
+    dev = fake_device("Lovense Hush", outputs={bp.VIBRATE}, battery=0.9)
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+    assert coordinator.data["lovense_hush"]["battery"] == 90.0
+
+    dev._battery = 0.5
+    await coordinator.async_refresh()
+
+    assert coordinator.data["lovense_hush"]["battery"] == 90.0, (
+        "a poll within the interval must reuse the cached value, not fetch again"
+    )
+
+
+@pytest.mark.asyncio
+async def test_battery_repolled_after_the_interval_elapses(coordinator, fake_device) -> None:
+    dev = fake_device("Lovense Hush", outputs={bp.VIBRATE}, battery=0.9)
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+
+    coordinator._last_battery_poll["lovense_hush"] -= 61
+    dev._battery = 0.5
+    await coordinator.async_refresh()
+
+    assert coordinator.data["lovense_hush"]["battery"] == 50.0

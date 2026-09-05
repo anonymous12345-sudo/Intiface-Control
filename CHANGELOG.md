@@ -6,6 +6,17 @@ All notable changes to this project are documented here, per release.
 
 - Nothing yet.
 
+## [0.2.2]
+
+### Changed
+
+- **Battery is now polled at most once every 60 seconds per toy**,
+  independently of the general 5-second device/capability refresh —
+  a value that only moves over hours doesn't need a network
+  round-trip every cycle. A newly connected (or reconnected) toy still
+  always gets its first reading immediately, so it's never shown
+  online without a battery value while the cache is warming up.
+
 ## [0.2.1]
 
 ### Added

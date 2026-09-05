@@ -26,6 +26,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from . import client as bp
 from .const import (
+    BATTERY_POLL_INTERVAL_SECONDS,
     CLIENT_NAME,
     CONF_FALLBACK_URL,
     CONF_URL,
@@ -58,6 +59,15 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         self._bp_client = None
         self._connect_lock = asyncio.Lock()
         self._consecutive_failures = 0
+
+        # Battery polling cache: last known value and when it was last
+        # actually fetched, per slug. A slug with no entry here yet gets
+        # polled immediately (covers both a brand-new device and one
+        # reappearing after being offline for a while) — only a slug
+        # that was already polled recently reuses its cached value
+        # instead of hitting the network again.
+        self._battery_cache: dict[str, float | None] = {}
+        self._last_battery_poll: dict[str, float] = {}
 
         # Running pattern tasks, keyed by device slug.
         self._active_patterns: dict[str, asyncio.Task] = {}
@@ -152,6 +162,24 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                     await c.stop_scanning()
             _LOGGER.info("Connected, devices: %s", [getattr(d, "name", "?") for d in self._devices()])
 
+    async def _poll_battery(self, slug: str, dev) -> float | None:
+        """Fetches battery over the network at most once every
+        BATTERY_POLL_INTERVAL_SECONDS per slug — a level that only moves
+        on a scale of hours doesn't need a real round-trip every 5s
+        refresh. A slug with no prior poll recorded (a brand-new device,
+        or one that just reappeared after being offline long enough for
+        this same check to naturally expire) always polls immediately,
+        so a connected device is never shown without a battery value
+        while this cache is still warming up."""
+        now = asyncio.get_event_loop().time()
+        last_poll = self._last_battery_poll.get(slug)
+        if last_poll is None or (now - last_poll) >= BATTERY_POLL_INTERVAL_SECONDS:
+            battery = await bp.read_battery(dev)
+            self._battery_cache[slug] = battery
+            self._last_battery_poll[slug] = now
+            return battery
+        return self._battery_cache.get(slug)
+
     async def _async_update_data(self) -> dict[str, dict[str, Any]]:
         try:
             await self._ensure_client()
@@ -206,7 +234,7 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             caps = bp.get_capabilities(dev)
             battery = None
             if "battery" in caps:
-                battery = await bp.read_battery(dev)
+                battery = await self._poll_battery(slug, dev)
             data[slug] = {
                 "name": getattr(dev, "name", slug),
                 "capabilities": caps,
