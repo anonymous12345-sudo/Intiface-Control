@@ -222,6 +222,14 @@ or more toys using Home Assistant's own device picker — pick a toy (or
 several) the same way you would when targeting a device in an
 automation, no need to know or type a device's internal slug.
 
+Timing uses the event loop's own clock rather than accumulating a
+running total, so the overall duration stays accurate even over a long
+pattern or with several devices — and if a device reports its own
+`message_timing_gap` (the minimum time Intiface itself enforces
+between commands to that device), commands to it are spaced out to
+respect that instead of firing faster than the server would actually
+deliver anyway.
+
 ### `intiface_control.start_wave_pattern`
 
 One smooth rise-and-fall: `min_speed` → `max_speed` → `min_speed`, over `duration` seconds.

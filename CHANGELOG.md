@@ -6,6 +6,29 @@ All notable changes to this project are documented here, per release.
 
 - Nothing yet.
 
+## [0.3.6]
+
+### Fixed
+
+- **Wave/pulse pattern timing no longer drifts on long patterns.**
+  Elapsed time was tracked by accumulating a fixed tick length in a
+  running total, which silently drifts longer than real time on every
+  iteration (each command send and the sleep call itself both take a
+  little real time on top of what was "slept for") — negligible over a
+  few seconds, but noticeable over a long pattern or with several
+  devices. Now measured against the event loop's own monotonic clock
+  instead.
+
+### Added
+
+- **Patterns now respect a device's own `message_timing_gap`** (the
+  minimum time Intiface enforces between commands to that device, in
+  milliseconds — confirmed present on the real buttplug-py device
+  object) as a floor on top of the existing tick rate, so commands
+  aren't sent faster than the server would actually deliver them
+  anyway. A device without this reported, or with a smaller gap than
+  the existing tick rate, is unaffected.
+
 ## [0.3.5]
 
 ### Fixed

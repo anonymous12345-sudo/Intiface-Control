@@ -419,23 +419,53 @@ def _clamp01(v: float) -> float:
 TICK_SECONDS = 0.2
 
 
+def _effective_tick_seconds(devs) -> float:
+    """The tick interval to actually use this cycle: TICK_SECONDS as a
+    floor, raised to respect any connected device's own
+    message_timing_gap (confirmed present on the real buttplug-py
+    device object as `message_timing_gap`, in milliseconds — see
+    https://github.com/buttplugio/buttplug-py/blob/e21318f/src/buttplug/device.py#L72).
+    The protocol documents this value as *server*-enforced, so ignoring
+    it doesn't corrupt anything — the server would just coalesce or
+    drop the excess messages — but respecting it means we don't bother
+    sending messages that would get thrown away anyway."""
+    tick = TICK_SECONDS
+    for dev in devs:
+        gap_ms = getattr(dev, "message_timing_gap", None)
+        if isinstance(gap_ms, (int, float)) and gap_ms > 0:
+            tick = max(tick, gap_ms / 1000.0)
+    return tick
+
+
 async def _run_wave_cycle(devs_getter, min_speed: float, max_speed: float, duration: float) -> None:
     """One single wave: smoothly rises from min_speed to max_speed and
     back down to min_speed over `duration` seconds — a single sine hump
     (0 -> 1 -> 0 mapped across the full duration), not a repeating
-    oscillation. Call this once per repeat from run_pattern_loop()."""
-    elapsed = 0.0
-    while elapsed < duration:
+    oscillation. Call this once per repeat from run_pattern_loop().
+
+    Uses the event loop's own monotonic clock for both the overall
+    duration and each tick's sleep target, rather than accumulating
+    TICK_SECONDS in a running total — the latter silently drifts longer
+    than the real elapsed time on every iteration (each send() and the
+    sleep call itself both take a little real time on top of the
+    "sleep for TICK_SECONDS" you asked for), which adds up over a long
+    pattern or many devices."""
+    loop = asyncio.get_running_loop()
+    start = loop.time()
+    next_deadline = start
+    while loop.time() - start < duration:
+        elapsed = loop.time() - start
         progress = elapsed / duration if duration > 0 else 1.0
         sin_val = math.sin(progress * math.pi)  # 0 at start/end, 1 at the midpoint
         current_speed = _clamp01(min_speed + sin_val * (max_speed - min_speed))
-        for dev in devs_getter():
+        devs = devs_getter()
+        for dev in devs:
             dev_output = intensity_output_type(dev)
             if dev_output is None:
                 continue
             await send(dev, dev_output, current_speed)
-        await asyncio.sleep(TICK_SECONDS)
-        elapsed += TICK_SECONDS
+        next_deadline += _effective_tick_seconds(devs)
+        await asyncio.sleep(max(0.0, next_deadline - loop.time()))
 
 
 async def _run_pulse_cycle(
@@ -443,17 +473,21 @@ async def _run_pulse_cycle(
 ) -> None:
     """One single pulse: low_speed held for low_duration seconds, then
     high_speed held for high_duration seconds. Call this once per repeat
-    from run_pattern_loop()."""
+    from run_pattern_loop(). See _run_wave_cycle() above for the
+    monotonic-clock reasoning."""
+    loop = asyncio.get_running_loop()
     for speed, phase_duration in ((low_speed, low_duration), (high_speed, high_duration)):
-        elapsed = 0.0
-        while elapsed < phase_duration:
-            for dev in devs_getter():
+        start = loop.time()
+        next_deadline = start
+        while loop.time() - start < phase_duration:
+            devs = devs_getter()
+            for dev in devs:
                 dev_output = intensity_output_type(dev)
                 if dev_output is None:
                     continue
                 await send(dev, dev_output, _clamp01(speed))
-            await asyncio.sleep(TICK_SECONDS)
-            elapsed += TICK_SECONDS
+            next_deadline += _effective_tick_seconds(devs)
+            await asyncio.sleep(max(0.0, next_deadline - loop.time()))
 
 
 async def run_wave_pattern(devs_getter, target_label: str, repeat: int, min_speed: float, max_speed: float, duration: float) -> None:

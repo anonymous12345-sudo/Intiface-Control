@@ -45,11 +45,12 @@ def _patch_device_output_command(monkeypatch):
 class FakeDevice:
     """A minimal stand-in for a buttplug device object, exposing exactly
     the surface our code touches (has_output/has_input/run_output/stop/
-    battery/rssi/pressure), so tests don't need a real Intiface server or
-    real hardware. Uses the REAL OutputType/InputType enum values from
-    the installed `buttplug` package (not re-invented fake ones) so tests
-    also catch enum-name mismatches — the same class of bug that once
-    broke PositionWithDuration detection."""
+    battery/rssi/pressure/message_timing_gap), so tests don't need a
+    real Intiface server or real hardware. Uses the REAL
+    OutputType/InputType enum values from the installed `buttplug`
+    package (not re-invented fake ones) so tests also catch enum-name
+    mismatches — the same class of bug that once broke
+    PositionWithDuration detection."""
 
     def __init__(
         self,
@@ -58,6 +59,7 @@ class FakeDevice:
         battery: float | None = None,
         rssi: float | None = None,
         pressure: float | None = None,
+        message_timing_gap: int | None = None,
     ):
         self.name = name
         self.index = 0
@@ -65,6 +67,7 @@ class FakeDevice:
         self._battery = battery
         self._rssi = rssi
         self._pressure = pressure
+        self.message_timing_gap = message_timing_gap
         self.sent: list = []
 
     def has_output(self, output_type) -> bool:

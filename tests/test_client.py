@@ -317,3 +317,37 @@ async def test_pattern_cleanup_does_not_silence_independent_rotation(fake_device
 
     assert ("STOP", None) not in dev.sent
     assert dev.sent[-1] == (bp.VIBRATE, (0.0,)), "pattern cleanup must zero its own output, not stop the device"
+
+
+@pytest.mark.asyncio
+async def test_pattern_respects_message_timing_gap(fake_device) -> None:
+    """A device's own message_timing_gap (confirmed present on the real
+    buttplug-py device object, in milliseconds — see
+    https://github.com/buttplugio/buttplug-py/blob/e21318f/src/buttplug/device.py#L72)
+    should raise the effective tick interval when it's larger than the
+    default TICK_SECONDS, so a device that needs a slower command rate
+    doesn't get sent commands faster than it asked for."""
+    import time
+
+    dev = fake_device("Slow Toy", outputs={bp.VIBRATE}, message_timing_gap=500)
+    start = time.monotonic()
+    await bp.run_wave_pattern(lambda: [dev], "test", repeat=1, min_speed=0.1, max_speed=0.9, duration=1.2)
+    total = time.monotonic() - start
+
+    # With a 500ms gap and a 1.2s pattern, ticks land roughly every 0.5s
+    # — few enough commands that a 0.2s-tick assumption would be
+    # obviously wrong (6 commands) but a 0.5s one isn't (2-3 commands).
+    assert 2 <= len(dev.sent) <= 4, f"expected ~2-3 commands at a 500ms gap over 1.2s, got {len(dev.sent)}"
+    assert total >= 1.1, "the pattern must not finish faster than its own configured duration"
+
+
+@pytest.mark.asyncio
+async def test_pattern_ignores_message_timing_gap_smaller_than_tick_seconds(fake_device) -> None:
+    """A device whose gap is smaller than TICK_SECONDS must not speed
+    ticks up beyond the default — TICK_SECONDS is always a floor, never
+    something a device can shrink."""
+    dev = fake_device("Fast Toy", outputs={bp.VIBRATE}, message_timing_gap=10)
+    await bp.run_wave_pattern(lambda: [dev], "test", repeat=1, min_speed=0.1, max_speed=0.9, duration=1.0)
+    # At the default 0.2s tick over 1.0s, ~5-6 commands are expected —
+    # a much larger count would mean the tiny gap wrongly sped things up.
+    assert len(dev.sent) <= 7, f"expected roughly 5-6 commands at the default tick rate, got {len(dev.sent)}"
