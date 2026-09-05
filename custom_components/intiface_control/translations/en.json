@@ -42,7 +42,12 @@
       "connected": { "name": "Connected" }
     },
     "sensor": {
-      "battery": { "name": "Battery" }
+      "battery": { "name": "Battery" },
+      "rssi": { "name": "Signal strength" },
+      "pressure": { "name": "Pressure" }
+    },
+    "light": {
+      "led": { "name": "LED" }
     },
     "switch": {
       "stop_all": { "name": "Stop all toys" },

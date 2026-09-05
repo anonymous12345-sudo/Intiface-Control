@@ -1,7 +1,7 @@
 """Number entities: one per device for intensity (whichever of
-vibrate/oscillate/rotate/constrict the device supports, picked
-automatically) and one per device for position, for devices that support
-it."""
+vibrate/oscillate/rotate/constrict/temperature/spray the device
+supports, picked automatically), one per device for position, and one
+per device for position duration, for devices that support it."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from .coordinator import IntifaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-INTENSITY_CAPS = {"oscillate", "vibrate", "rotate", "constrict"}
+INTENSITY_CAPS = {"oscillate", "vibrate", "rotate", "constrict", "temperature", "spray"}
 
 
 def _device_info(entry_id: str, slug: str, name: str) -> DeviceInfo:
@@ -32,7 +32,8 @@ def _device_info(entry_id: str, slug: str, name: str) -> DeviceInfo:
 
 class IntifaceIntensityNumber(CoordinatorEntity[IntifaceCoordinator], NumberEntity):
     """Generic 0-100% intensity control — maps to whichever output type
-    (vibrate/oscillate/rotate/constrict) the device actually supports."""
+    (vibrate/oscillate/rotate/constrict/temperature/spray) the device
+    actually supports."""
 
     _attr_native_min_value = 0
     _attr_native_max_value = 100

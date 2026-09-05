@@ -11,7 +11,7 @@ from homeassistant.helpers import device_registry as dr
 from .const import DOMAIN
 from .coordinator import IntifaceCoordinator
 
-PLATFORMS = ["number", "binary_sensor", "sensor", "switch"]
+PLATFORMS = ["number", "binary_sensor", "sensor", "switch", "light"]
 
 SERVICE_START_WAVE_PATTERN = "start_wave_pattern"
 SERVICE_START_PULSE_PATTERN = "start_pulse_pattern"

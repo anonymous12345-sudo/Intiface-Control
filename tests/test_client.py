@@ -36,6 +36,28 @@ def test_enum_resolution_finds_every_known_output_type() -> None:
     )
 
 
+def test_newer_output_and_input_types_resolve_if_the_installed_library_has_them() -> None:
+    """Temperature/Spray/Led/Rssi/Pressure are newer additions to the
+    buttplug protocol (spec v4) — unlike the core types above, whether
+    the exact installed library version already exposes them isn't
+    guaranteed, so this is informational rather than a hard regression
+    test: it reports what actually resolved without failing CI over an
+    optional capability the installed library might not have yet. Our
+    own code already treats an unresolved (None) type as "capability
+    doesn't exist" everywhere it's used, so a None here is a legitimate,
+    handled outcome, not a bug."""
+    resolved = {
+        "Temperature": bp.TEMPERATURE,
+        "Spray": bp.SPRAY,
+        "Led": bp.LED,
+        "Rssi": bp.RSSI_INPUT,
+        "Pressure": bp.PRESSURE_INPUT,
+    }
+    missing = [name for name, value in resolved.items() if value is None]
+    if missing:
+        print(f"NOTE: installed buttplug library doesn't (yet) expose: {missing}")
+
+
 def test_device_slug_basic() -> None:
     dev = type("Dev", (), {"name": "Lovense Hush"})()
     assert bp.device_slug(dev) == "lovense_hush"
@@ -115,3 +137,66 @@ async def test_read_battery_normalizes_fraction_to_percent(fake_device) -> None:
     dev = fake_device("Hush", outputs=set(), battery=0.85)
     pct = await bp.read_battery(dev)
     assert pct == 85.0
+
+
+@pytest.mark.asyncio
+async def test_device_with_only_spray_uses_it_as_intensity(fake_device) -> None:
+    if bp.SPRAY is None:
+        pytest.skip("installed buttplug library doesn't expose Spray yet")
+    dev = fake_device("Spray Toy", outputs={bp.SPRAY})
+    assert "spray" in bp.get_capabilities(dev)
+    ok = await bp.apply_intensity(dev, 0.6)
+    assert ok is True
+    assert dev.sent[-1] == (bp.SPRAY, (0.6,))
+
+
+@pytest.mark.asyncio
+async def test_device_with_only_temperature_uses_it_as_intensity(fake_device) -> None:
+    if bp.TEMPERATURE is None:
+        pytest.skip("installed buttplug library doesn't expose Temperature yet")
+    dev = fake_device("Warming Toy", outputs={bp.TEMPERATURE})
+    assert "temperature" in bp.get_capabilities(dev)
+    ok = await bp.apply_intensity(dev, 0.4)
+    assert ok is True
+    assert dev.sent[-1] == (bp.TEMPERATURE, (0.4,))
+
+
+@pytest.mark.asyncio
+async def test_apply_led(fake_device) -> None:
+    if bp.LED is None:
+        pytest.skip("installed buttplug library doesn't expose Led yet")
+    dev = fake_device("LED Toy", outputs={bp.LED})
+    assert "led" in bp.get_capabilities(dev)
+    ok = await bp.apply_led(dev, 0.8)
+    assert ok is True
+    assert dev.sent[-1] == (bp.LED, (0.8,))
+
+
+def test_led_is_not_folded_into_intensity_priority() -> None:
+    """LED gets its own `light` entity (light.py), not the generic
+    Intensity slider — it must never appear in the priority list used
+    to pick an intensity output type."""
+    assert bp.LED not in bp.INTENSITY_OUTPUT_PRIORITY
+
+
+@pytest.mark.asyncio
+async def test_rssi_and_pressure_capability_detection_and_reads(fake_device) -> None:
+    if bp.RSSI_INPUT is None or bp.PRESSURE_INPUT is None:
+        pytest.skip("installed buttplug library doesn't expose Rssi/Pressure yet")
+    dev = fake_device("Sensor Toy", outputs=set(), rssi=-55.0, pressure=42.0)
+    caps = bp.get_capabilities(dev)
+    assert "rssi" in caps
+    assert "pressure" in caps
+    assert await bp.read_rssi(dev) == -55.0
+    assert await bp.read_pressure(dev) == 42.0
+
+
+@pytest.mark.asyncio
+async def test_device_without_new_capabilities_does_not_get_them(fake_device) -> None:
+    dev = fake_device("Plain Vibrator", outputs={bp.VIBRATE})
+    caps = bp.get_capabilities(dev)
+    assert "spray" not in caps
+    assert "temperature" not in caps
+    assert "led" not in caps
+    assert "rssi" not in caps
+    assert "pressure" not in caps

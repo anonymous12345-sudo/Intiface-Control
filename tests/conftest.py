@@ -45,17 +45,26 @@ def _patch_device_output_command(monkeypatch):
 class FakeDevice:
     """A minimal stand-in for a buttplug device object, exposing exactly
     the surface our code touches (has_output/has_input/run_output/stop/
-    battery), so tests don't need a real Intiface server or real
-    hardware. Uses the REAL OutputType/InputType enum values from the
-    installed `buttplug` package (not re-invented fake ones) so tests
+    battery/rssi/pressure), so tests don't need a real Intiface server or
+    real hardware. Uses the REAL OutputType/InputType enum values from
+    the installed `buttplug` package (not re-invented fake ones) so tests
     also catch enum-name mismatches — the same class of bug that once
     broke PositionWithDuration detection."""
 
-    def __init__(self, name: str, outputs=None, battery: float | None = None):
+    def __init__(
+        self,
+        name: str,
+        outputs=None,
+        battery: float | None = None,
+        rssi: float | None = None,
+        pressure: float | None = None,
+    ):
         self.name = name
         self.index = 0
         self._outputs = set(outputs or [])
         self._battery = battery
+        self._rssi = rssi
+        self._pressure = pressure
         self.sent: list = []
 
     def has_output(self, output_type) -> bool:
@@ -64,7 +73,13 @@ class FakeDevice:
     def has_input(self, input_type) -> bool:
         from custom_components.intiface_control import client as bp_client
 
-        return input_type == bp_client.BATTERY_INPUT and self._battery is not None
+        if input_type == bp_client.BATTERY_INPUT:
+            return self._battery is not None
+        if input_type == bp_client.RSSI_INPUT:
+            return self._rssi is not None
+        if input_type == bp_client.PRESSURE_INPUT:
+            return self._pressure is not None
+        return False
 
     async def run_output(self, cmd) -> None:
         if cmd.output_type not in self._outputs:
@@ -76,6 +91,12 @@ class FakeDevice:
 
     async def battery(self):
         return self._battery
+
+    async def rssi(self):
+        return self._rssi
+
+    async def pressure(self):
+        return self._pressure
 
 
 @pytest.fixture

@@ -6,6 +6,34 @@ All notable changes to this project are documented here, per release.
 
 - Nothing yet.
 
+## [0.3.0]
+
+### Added
+
+- **New output types**: `Temperature` and `Spray` are now treated as
+  generic 0-100% intensity actuators, exactly like vibrate/oscillate/
+  rotate/constrict already were — a device with only one of these gets
+  an Intensity slider automatically, no separate entity needed.
+- **LED support**: a new `light` entity (brightness-only, no color)
+  for devices with an LED output — modeled as a real Home Assistant
+  light rather than another generic slider, since that's the
+  idiomatic representation.
+- **New sensors**: Signal strength (RSSI, in dBm, using Home
+  Assistant's built-in signal-strength device class) and Pressure (a
+  raw reading — disabled by default and without a confirmed unit,
+  since it's untested against real pressure-sensing hardware).
+
+### Known limitations (new)
+
+- `Temperature`, `Spray`, `Led`, and `Pressure` haven't been exercised
+  against real hardware of those specific kinds — only Intiface's
+  simulated devices and the test suite's fakes. See the README's Known
+  limitations section.
+- `Button` input (a physical button press) is deliberately not
+  implemented — it's event-based, not a continuous value, and doesn't
+  fit this integration's poll-based refresh model without a bigger
+  architecture change.
+
 ## [0.2.3]
 
 ### Added

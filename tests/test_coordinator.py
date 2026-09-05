@@ -513,3 +513,39 @@ async def test_position_duration_setting_alone_never_commands_the_device(coordin
 
     coordinator.async_set_position_duration("simulated_stroker", 3000)
     assert dev.sent == []
+
+
+@pytest.mark.asyncio
+async def test_coordinator_polls_rssi_and_pressure_when_supported(coordinator, fake_device) -> None:
+    if bp.RSSI_INPUT is None or bp.PRESSURE_INPUT is None:
+        pytest.skip("installed buttplug library doesn't expose Rssi/Pressure yet")
+    dev = fake_device("Sensor Toy", outputs={bp.VIBRATE}, rssi=-58.0, pressure=17.0)
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+
+    info = coordinator.data["sensor_toy"]
+    assert info["rssi"] == -58.0
+    assert info["pressure"] == 17.0
+
+
+@pytest.mark.asyncio
+async def test_led_gate_behaviour_matches_other_commands(coordinator, fake_device) -> None:
+    if bp.LED is None:
+        pytest.skip("installed buttplug library doesn't expose Led yet")
+    dev = fake_device("LED Toy", outputs={bp.LED})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+
+    ok = await coordinator.async_apply_led("led_toy", 60)
+    assert ok is True
+    assert dev.sent[-1] == (bp.LED, (0.6,))
+
+    await coordinator.async_stop_device("led_toy")
+    dev.sent.clear()
+    ok = await coordinator.async_apply_led("led_toy", 60)
+    assert ok is False, "a disabled device must refuse LED commands too"
+    assert dev.sent == []
+
+    coordinator.async_clear_device_stop("led_toy")
+    ok = await coordinator.async_apply_led("led_toy", 60)
+    assert ok is True

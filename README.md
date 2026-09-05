@@ -55,11 +55,14 @@ For every connected toy, grouped under one Home Assistant **device**:
 
 | Entity | When it's created | What it does |
 |---|---|---|
-| `number` — Intensity | Device supports vibrate, oscillate, rotate, or constrict | 0–100% slider. Automatically uses whichever of those four output types the device actually supports. |
+| `number` — Intensity | Device supports vibrate, oscillate, rotate, constrict, temperature, or spray | 0–100% slider. Automatically uses whichever of those output types the device actually supports. |
 | `number` — Position | Device supports Position or PositionWithDuration | 0–100% slider for linear devices (e.g. a stroker). Uses whatever duration is set on the companion "Position duration" entity below (0/instant if that's never been touched). |
 | `number` — Position duration | Same as Position above | 0–10 second slider controlling how long the Position slider's *next* move takes. A stored preference, not a toy command by itself — moving only this slider never sends anything to the device. |
+| `light` — LED | Device supports Led | Brightness-only light control. Modeled as a real Home Assistant light (not another generic slider), since that's the idiomatic representation for a light. |
 | `binary_sensor` — Connected | Always | Reflects whether the toy is currently reachable through Intiface. |
 | `sensor` — Battery | Device reports a battery level | Battery percentage, polled every 60s (independently of the general 5s device refresh) — a level that only moves over hours doesn't need a network round-trip every cycle. A newly connected (or reconnected) device always gets its first reading immediately, never waiting out that interval. |
+| `sensor` — Signal strength | Device reports RSSI | Bluetooth signal strength in dBm. |
+| `sensor` — Pressure | Device reports a pressure reading | A raw pressure value. **Untested against real hardware** — no device_class or unit is set since the exact scale buttplug reports isn't confirmed yet, and the entity is disabled by default until it's verified against real pressure-sensing hardware. |
 | `switch` — Enabled | Always | On (the default) means this toy responds normally; turning it off immediately stops it and refuses further commands until switched back on. See [The emergency stop switch](#the-emergency-stop-switch) below. |
 
 Plus, once per Home Assistant config entry (i.e. once per Intiface
@@ -362,14 +365,28 @@ only an actual name collision changes anything.
 
 ## Known limitations
 
-- `Constrict` and `PositionWithDuration` are implemented using the
-  same capability-introspection approach as everything else, but
-  haven't been exercised against real hardware of those specific kinds
-  (e.g. a Lovense Max for Constrict) — only against Intiface's
-  simulated devices. If something behaves oddly on real hardware of
-  that type, check the Home Assistant logs at debug level; the
-  underlying client code logs which specific attempt succeeded or
-  failed.
+- `Constrict`, `PositionWithDuration`, `Temperature`, `Spray`, and `Led`
+  are all implemented using the same capability-introspection approach
+  as everything else, but haven't been exercised against real hardware
+  of those specific kinds (e.g. a heating or LED-equipped toy) — only
+  against Intiface's simulated devices. If something behaves oddly on
+  real hardware of that type, check the Home Assistant logs at debug
+  level; the underlying client code logs which specific attempt
+  succeeded or failed.
+- `Pressure` is implemented but genuinely unverified against real
+  hardware — the exact value scale/units buttplug reports for it aren't
+  confirmed, so the sensor has no unit or device class and is disabled
+  by default. If you have pressure-sensing hardware, enabling it and
+  reporting back what values it actually shows would help nail this
+  down properly.
+- `Button` input (a physical button press on a toy) isn't implemented
+  at all. Unlike everything else here, a button press is inherently a
+  one-off event, not a continuous value — it doesn't fit this
+  integration's poll-based refresh model the way battery/RSSI/pressure
+  do, and would likely need its own architecture (e.g. a Home Assistant
+  `event` entity backed by a push/subscription mechanism, if the
+  underlying Python library even supports one) rather than being added
+  onto the existing pattern.
 - The index-based disambiguation for same-named toys (see
   Troubleshooting above) isn't guaranteed stable across a full Intiface
   restart — indices are assigned in connection order, which could in

@@ -271,3 +271,33 @@ async def test_position_duration_slider_is_used_by_position_slider(hass, setup_e
     )
 
     assert dev.sent[-1] == (bp.POSITION_WITH_DURATION, (0.7, 1500))
+
+
+@pytest.mark.asyncio
+async def test_led_light_entity_end_to_end(hass, setup_entry, fake_device) -> None:
+    if bp.LED is None:
+        pytest.skip("installed buttplug library doesn't expose Led yet")
+    coordinator = hass.data[DOMAIN][setup_entry.entry_id]
+    dev = fake_device("LED Toy", outputs={bp.LED})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    state = hass.states.get("light.led_toy_led")
+    assert state is not None
+    assert state.state == "off"
+
+    await hass.services.async_call(
+        "light", "turn_on",
+        {"entity_id": "light.led_toy_led", "brightness": 200},
+        blocking=True,
+    )
+    assert hass.states.get("light.led_toy_led").state == "on"
+    assert dev.sent[-1][0] == bp.LED
+
+    await hass.services.async_call(
+        "light", "turn_off",
+        {"entity_id": "light.led_toy_led"},
+        blocking=True,
+    )
+    assert hass.states.get("light.led_toy_led").state == "off"

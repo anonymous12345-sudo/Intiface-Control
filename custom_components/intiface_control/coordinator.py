@@ -244,10 +244,18 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             battery = None
             if "battery" in caps:
                 battery = await self._poll_battery(slug, dev)
+            rssi = None
+            if "rssi" in caps:
+                rssi = await bp.read_rssi(dev)
+            pressure = None
+            if "pressure" in caps:
+                pressure = await bp.read_pressure(dev)
             data[slug] = {
                 "name": getattr(dev, "name", slug),
                 "capabilities": caps,
                 "battery": battery,
+                "rssi": rssi,
+                "pressure": pressure,
                 "device": dev,
             }
             if slug not in self.known_slugs:
@@ -387,6 +395,21 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         if dev is None:
             return False
         return await bp.apply_intensity(dev, percent / 100.0)
+
+    async def async_apply_led(self, slug: str, percent: float) -> bool:
+        """percent is 0-100 brightness. Same gate checks as
+        async_apply_intensity — a stopped or disabled device refuses
+        this too, even though an LED isn't a haptic motor."""
+        if self.stopped:
+            _LOGGER.warning("Ignoring LED command for %s: stop switch is on", slug)
+            return False
+        if slug in self.per_slug_stopped:
+            _LOGGER.warning("Ignoring LED command for %s: device stop switch is on", slug)
+            return False
+        dev = self.get_device(slug)
+        if dev is None:
+            return False
+        return await bp.apply_led(dev, percent / 100.0)
 
     def get_position_duration(self, slug: str) -> int:
         return self.position_duration_ms.get(slug, 0)

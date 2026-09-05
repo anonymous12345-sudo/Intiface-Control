@@ -57,18 +57,30 @@ OSCILLATE = _enum(OutputType, "Oscillate")
 VIBRATE = _enum(OutputType, "Vibrate")
 ROTATE = _enum(OutputType, "Rotate")
 CONSTRICT = _enum(OutputType, "Constrict")
+TEMPERATURE = _enum(OutputType, "Temperature")
+SPRAY = _enum(OutputType, "Spray")
+LED = _enum(OutputType, "Led")
 POSITION = _enum(OutputType, "Position")
 # Name varies between library versions (the Rust side calls this HwPositionWithDuration).
 POSITION_WITH_DURATION = (
     _enum(OutputType, "PositionWithDuration") or _enum(OutputType, "HwPositionWithDuration")
 )
 BATTERY_INPUT = _enum(InputType, "Battery")
+RSSI_INPUT = _enum(InputType, "Rssi")
+PRESSURE_INPUT = _enum(InputType, "Pressure")
 
 # Preference order for the generic 0-100% "intensity" concept: the first
 # type in this list that a device actually supports (via has_output())
 # gets used. New toys with any of these outputs work automatically, no
-# brand/name-specific code needed.
-INTENSITY_OUTPUT_PRIORITY = [t for t in (OSCILLATE, VIBRATE, ROTATE, CONSTRICT) if t is not None]
+# brand/name-specific code needed. Temperature and Spray are structurally
+# identical scalar (0-100%) actuators to the haptic ones, so they share
+# the same generic treatment (and can run wave/pulse patterns too). Led
+# is deliberately NOT here — it's exposed as its own `light` entity
+# instead (see light.py), since that's the idiomatic Home Assistant
+# model for a light, not another generic intensity slider.
+INTENSITY_OUTPUT_PRIORITY = [
+    t for t in (OSCILLATE, VIBRATE, ROTATE, CONSTRICT, TEMPERATURE, SPRAY) if t is not None
+]
 
 # Named convenience methods on the device object, as a fallback for when
 # run_output() doesn't work or doesn't exist (older library versions).
@@ -78,6 +90,8 @@ _METHOD_NAMES = {
         VIBRATE: "vibrate",
         ROTATE: "rotate",
         CONSTRICT: "constrict",
+        TEMPERATURE: "temperature",
+        SPRAY: "spray",
     }.items() if ot is not None
 }
 
@@ -120,6 +134,36 @@ def has_battery(dev) -> bool:
     return hasattr(dev, "battery")
 
 
+def has_rssi(dev) -> bool:
+    """Whether this device reports Bluetooth signal strength. Same
+    has_input()-with-hasattr-fallback pattern as has_battery() above."""
+    has_input_fn = getattr(dev, "has_input", None)
+    if has_input_fn is not None and RSSI_INPUT is not None:
+        try:
+            return bool(has_input_fn(RSSI_INPUT))
+        except Exception:
+            _LOGGER.debug("has_input(Rssi) failed on %s", getattr(dev, "name", "?"), exc_info=True)
+    return hasattr(dev, "rssi")
+
+
+def has_pressure(dev) -> bool:
+    """Whether this device reports a pressure reading. Untested against
+    real hardware (no pressure-sensing toy was available during
+    development) — the read side (read_pressure() below) may need
+    adjusting once someone can verify it against the real thing."""
+    has_input_fn = getattr(dev, "has_input", None)
+    if has_input_fn is not None and PRESSURE_INPUT is not None:
+        try:
+            return bool(has_input_fn(PRESSURE_INPUT))
+        except Exception:
+            _LOGGER.debug("has_input(Pressure) failed on %s", getattr(dev, "name", "?"), exc_info=True)
+    return hasattr(dev, "pressure")
+
+
+def has_led(dev) -> bool:
+    return _has_output(dev, LED) is True
+
+
 def intensity_output_type(dev):
     """Picks which output type is used for the generic 0-100% intensity
     concept: the first type from INTENSITY_OUTPUT_PRIORITY that this
@@ -149,12 +193,22 @@ def get_capabilities(dev) -> list[str]:
         caps.append("rotate")
     if _has_output(dev, CONSTRICT):
         caps.append("constrict")
+    if _has_output(dev, TEMPERATURE):
+        caps.append("temperature")
+    if _has_output(dev, SPRAY):
+        caps.append("spray")
+    if has_led(dev):
+        caps.append("led")
     if _has_output(dev, POSITION):
         caps.append("position")
     if _has_output(dev, POSITION_WITH_DURATION):
         caps.append("position_with_duration")
     if has_battery(dev):
         caps.append("battery")
+    if has_rssi(dev):
+        caps.append("rssi")
+    if has_pressure(dev):
+        caps.append("pressure")
     return caps
 
 
@@ -203,6 +257,16 @@ async def apply_intensity(dev, speed: float) -> bool:
                 ok = True
                 break
     return ok
+
+
+async def apply_led(dev, brightness: float) -> bool:
+    """brightness is a 0.0-1.0 fraction. Turning fully off (brightness<=0)
+    still goes through send() rather than stop_device() — LED brightness
+    isn't a haptic motor, stopping the device wholesale doesn't apply to
+    it the way it does for vibrate/rotate/etc."""
+    if LED is None:
+        return False
+    return await send(dev, LED, max(0.0, brightness))
 
 
 async def send_position(dev, position: float, duration_ms: int) -> bool:
@@ -258,6 +322,41 @@ async def read_battery(dev) -> float | None:
             return max(0.0, min(100.0, val))
     except Exception:
         _LOGGER.warning("battery() failed on %s", getattr(dev, "name", "?"), exc_info=True)
+    return None
+
+
+async def read_rssi(dev) -> float | None:
+    """Returns Bluetooth signal strength in dBm (typically a negative
+    number, e.g. -60), or None if unavailable."""
+    try:
+        if hasattr(dev, "rssi"):
+            raw = await dev.rssi()
+            if raw is None:
+                return None
+            return float(raw)
+    except Exception:
+        _LOGGER.warning("rssi() failed on %s", getattr(dev, "name", "?"), exc_info=True)
+    return None
+
+
+async def read_pressure(dev) -> float | None:
+    """Returns a raw pressure reading, or None if unavailable.
+
+    Untested against real hardware — no pressure-sensing toy was
+    available during development. The buttplug library's exact
+    pressure-value scale/units aren't confirmed here; this currently
+    just passes the raw value through unmodified (unlike read_battery(),
+    which normalizes a 0.0-1.0 fraction up to a percentage — pressure
+    may need the same kind of normalization once it's actually been
+    tested against a real device)."""
+    try:
+        if hasattr(dev, "pressure"):
+            raw = await dev.pressure()
+            if raw is None:
+                return None
+            return float(raw)
+    except Exception:
+        _LOGGER.warning("pressure() failed on %s", getattr(dev, "name", "?"), exc_info=True)
     return None
 
 
