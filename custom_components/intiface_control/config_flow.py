@@ -44,14 +44,14 @@ async def _test_connection(url: str, fallback_url: str | None = None) -> None:
     try:
         await _try_connect(url)
         return
-    except Exception as primary_err:
+    except Exception:
         if fallback_url:
             try:
                 await _try_connect(fallback_url)
                 return
             except Exception:
-                pass
-        raise primary_err
+                _LOGGER.debug("Fallback connection test also failed", exc_info=True)
+        raise
 
 
 class IntifaceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
