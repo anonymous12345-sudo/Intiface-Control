@@ -35,7 +35,8 @@
   "entity": {
     "number": {
       "intensity": { "name": "Intensity" },
-      "position": { "name": "Position" }
+      "position": { "name": "Position" },
+      "position_duration": { "name": "Position duration" }
     },
     "binary_sensor": {
       "connected": { "name": "Connected" }

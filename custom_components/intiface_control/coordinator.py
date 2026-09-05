@@ -72,6 +72,15 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         # Running pattern tasks, keyed by device slug.
         self._active_patterns: dict[str, asyncio.Task] = {}
 
+        # How long a position move should take, per slug — a stored
+        # preference set via its own number entity, not a live toy state.
+        # Not touched by the emergency-stop gates below: it doesn't move
+        # anything by itself, only async_apply_position() does, and that
+        # already goes through the same gate checks as every other
+        # command. Missing/unset means 0 (instant move, the previous,
+        # only behaviour before this existed).
+        self.position_duration_ms: dict[str, int] = {}
+
         # True while the emergency-stop switch is on. Acts as a real gate:
         # every control method below refuses to send anything while this
         # is set, not just a one-off stop at the moment the switch flips.
@@ -379,15 +388,29 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             return False
         return await bp.apply_intensity(dev, percent / 100.0)
 
-    async def async_apply_position(self, slug: str, percent: float, duration_ms: int = 0) -> bool:
+    def get_position_duration(self, slug: str) -> int:
+        return self.position_duration_ms.get(slug, 0)
+
+    def async_set_position_duration(self, slug: str, duration_ms: int) -> None:
+        """Stores the preferred move duration for a slug — purely a
+        setting for the next async_apply_position() call, doesn't move
+        or command the device by itself."""
+        self.position_duration_ms[slug] = duration_ms
+
+    async def async_apply_position(self, slug: str, percent: float, duration_ms: int | None = None) -> bool:
         """percent is 0-100. Refuses while the global stop switch OR this
-        specific device's own stop switch is on."""
+        specific device's own stop switch is on. If duration_ms isn't
+        given explicitly, uses whatever was last set via
+        async_set_position_duration() for this slug (0/instant if never
+        set)."""
         if self.stopped:
             _LOGGER.warning("Ignoring position command for %s: stop switch is on", slug)
             return False
         if slug in self.per_slug_stopped:
             _LOGGER.warning("Ignoring position command for %s: device stop switch is on", slug)
             return False
+        if duration_ms is None:
+            duration_ms = self.get_position_duration(slug)
         dev = self.get_device(slug)
         if dev is None:
             return False

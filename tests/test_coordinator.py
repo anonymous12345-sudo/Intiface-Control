@@ -461,3 +461,55 @@ async def test_battery_repolled_after_the_interval_elapses(coordinator, fake_dev
     await coordinator.async_refresh()
 
     assert coordinator.data["lovense_hush"]["battery"] == 50.0
+
+
+@pytest.mark.asyncio
+async def test_position_duration_defaults_to_instant_move(coordinator, fake_device) -> None:
+    """Before any duration is ever set for a slug, moves must behave
+    exactly as they did before this feature existed — instant."""
+    dev = fake_device("Simulated Stroker", outputs={bp.POSITION, bp.POSITION_WITH_DURATION})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+
+    assert coordinator.get_position_duration("simulated_stroker") == 0
+
+    ok = await coordinator.async_apply_position("simulated_stroker", 60)
+    assert ok is True
+    assert dev.sent[0][0] == bp.POSITION, "with no duration set, should use plain Position, not PositionWithDuration"
+
+
+@pytest.mark.asyncio
+async def test_position_duration_is_stored_and_reused(coordinator, fake_device) -> None:
+    dev = fake_device("Simulated Stroker", outputs={bp.POSITION, bp.POSITION_WITH_DURATION})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+
+    coordinator.async_set_position_duration("simulated_stroker", 2500)
+    assert coordinator.get_position_duration("simulated_stroker") == 2500
+
+    await coordinator.async_apply_position("simulated_stroker", 80)
+    assert dev.sent[-1] == (bp.POSITION_WITH_DURATION, (0.8, 2500))
+
+
+@pytest.mark.asyncio
+async def test_position_duration_can_be_overridden_explicitly(coordinator, fake_device) -> None:
+    """An explicit duration_ms argument still takes priority over the
+    stored preference, for any future caller that wants to override it
+    for one specific move."""
+    dev = fake_device("Simulated Stroker", outputs={bp.POSITION, bp.POSITION_WITH_DURATION})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+
+    coordinator.async_set_position_duration("simulated_stroker", 2500)
+    await coordinator.async_apply_position("simulated_stroker", 50, duration_ms=100)
+    assert dev.sent[-1] == (bp.POSITION_WITH_DURATION, (0.5, 100))
+
+
+@pytest.mark.asyncio
+async def test_position_duration_setting_alone_never_commands_the_device(coordinator, fake_device) -> None:
+    dev = fake_device("Simulated Stroker", outputs={bp.POSITION, bp.POSITION_WITH_DURATION})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+
+    coordinator.async_set_position_duration("simulated_stroker", 3000)
+    assert dev.sent == []

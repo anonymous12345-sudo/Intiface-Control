@@ -71,10 +71,10 @@ class IntifaceIntensityNumber(CoordinatorEntity[IntifaceCoordinator], NumberEnti
 
 
 class IntifacePositionNumber(CoordinatorEntity[IntifaceCoordinator], NumberEntity):
-    """0-100% position control for linear devices (e.g. a stroker). Moves
-    immediately — no duration control on this entity in this first
-    version; the underlying coordinator method does support duration_ms
-    if that's ever needed."""
+    """0-100% position control for linear devices (e.g. a stroker). Uses
+    whatever duration is currently set on this device's companion
+    "Position duration" entity (see IntifacePositionDurationNumber below)
+    — 0/instant if that was never touched."""
 
     _attr_native_min_value = 0
     _attr_native_max_value = 100
@@ -108,6 +108,41 @@ class IntifacePositionNumber(CoordinatorEntity[IntifaceCoordinator], NumberEntit
         await self.coordinator.async_apply_position(self._slug, value)
 
 
+class IntifacePositionDurationNumber(CoordinatorEntity[IntifaceCoordinator], NumberEntity):
+    """How long the companion position slider's next move should take,
+    in seconds (0-10, matching the 0-10000ms range the standalone
+    bridge project originally supported). A stored preference, not a
+    live toy command by itself — moving this slider alone never sends
+    anything to the device. Not reset by the emergency-stop gates: it
+    doesn't move anything, and a stopped device already refuses
+    position commands regardless of whatever duration is set here."""
+
+    _attr_native_min_value = 0
+    _attr_native_max_value = 10
+    _attr_native_step = 0.1
+    _attr_native_unit_of_measurement = "s"
+    _attr_mode = NumberMode.SLIDER
+    _attr_has_entity_name = True
+    _attr_translation_key = "position_duration"
+    _attr_icon = "mdi:timer-outline"
+
+    def __init__(self, coordinator: IntifaceCoordinator, entry_id: str, slug: str, name: str) -> None:
+        super().__init__(coordinator)
+        self._slug = slug
+        self._attr_unique_id = f"{entry_id}_{slug}_position_duration"
+        self._attr_device_info = _device_info(entry_id, slug, name)
+        self._attr_native_value = 0.0
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._slug in (self.coordinator.data or {})
+
+    async def async_set_native_value(self, value: float) -> None:
+        self._attr_native_value = value
+        self.async_write_ha_state()
+        self.coordinator.async_set_position_duration(self._slug, int(value * 1000))
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     coordinator: IntifaceCoordinator = hass.data[DOMAIN][entry.entry_id]
 
@@ -119,6 +154,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 entities.append(IntifaceIntensityNumber(coordinator, entry.entry_id, slug, name))
             if "position" in caps or "position_with_duration" in caps:
                 entities.append(IntifacePositionNumber(coordinator, entry.entry_id, slug, name))
+                entities.append(IntifacePositionDurationNumber(coordinator, entry.entry_id, slug, name))
         if entities:
             async_add_entities(entities)
 

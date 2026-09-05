@@ -56,7 +56,8 @@ For every connected toy, grouped under one Home Assistant **device**:
 | Entity | When it's created | What it does |
 |---|---|---|
 | `number` — Intensity | Device supports vibrate, oscillate, rotate, or constrict | 0–100% slider. Automatically uses whichever of those four output types the device actually supports. |
-| `number` — Position | Device supports Position or PositionWithDuration | 0–100% slider for linear devices (e.g. a stroker). Moves immediately; no in-UI duration control in this version. |
+| `number` — Position | Device supports Position or PositionWithDuration | 0–100% slider for linear devices (e.g. a stroker). Uses whatever duration is set on the companion "Position duration" entity below (0/instant if that's never been touched). |
+| `number` — Position duration | Same as Position above | 0–10 second slider controlling how long the Position slider's *next* move takes. A stored preference, not a toy command by itself — moving only this slider never sends anything to the device. |
 | `binary_sensor` — Connected | Always | Reflects whether the toy is currently reachable through Intiface. |
 | `sensor` — Battery | Device reports a battery level | Battery percentage, polled every 60s (independently of the general 5s device refresh) — a level that only moves over hours doesn't need a network round-trip every cycle. A newly connected (or reconnected) device always gets its first reading immediately, never waiting out that interval. |
 | `switch` — Enabled | Always | On (the default) means this toy responds normally; turning it off immediately stops it and refuses further commands until switched back on. See [The emergency stop switch](#the-emergency-stop-switch) below. |
@@ -338,7 +339,7 @@ section's sibling behaviour: entities for a toy that goes offline
 become *unavailable* (or, for the connectivity sensor, just switch to
 "off"), but are never deleted. This keeps dashboards and automations
 stable instead of silently losing entities. If you genuinely want to
-remove a toy's entities, delete its device manually
+remove a toy's entities (e.g. you sold it), delete its device manually
 under **Settings → Devices & services → Intiface Control**.
 
 **A persistent "Can't connect to Intiface" notification under Settings → System → Repairs**
@@ -369,10 +370,6 @@ only an actual name collision changes anything.
   that type, check the Home Assistant logs at debug level; the
   underlying client code logs which specific attempt succeeded or
   failed.
-- The position slider has no duration control in the UI. The
-  coordinator supports it (`async_apply_position(slug, percent,
-  duration_ms)`), it's just not exposed as a service or a second
-  entity yet.
 - The index-based disambiguation for same-named toys (see
   Troubleshooting above) isn't guaranteed stable across a full Intiface
   restart — indices are assigned in connection order, which could in

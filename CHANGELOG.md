@@ -6,6 +6,17 @@ All notable changes to this project are documented here, per release.
 
 - Nothing yet.
 
+## [0.2.3]
+
+### Added
+
+- **Position duration control**: a new "Position duration" number
+  entity (0–10 seconds) alongside every stroker's existing Position
+  slider. Set it once, and the Position slider automatically uses that
+  duration for its next move (0/instant if never touched, matching the
+  previous, only behaviour) — no need to supply a duration on every
+  single move.
+
 ## [0.2.2]
 
 ### Changed

@@ -245,3 +245,29 @@ async def test_wave_pattern_service_via_real_device_registry(hass, setup_entry, 
     assert speeds[0] == pytest.approx(0.1, abs=0.01)
     assert max(speeds) > 0.85
     assert hush.sent[-1] == ("STOP", None)
+
+
+@pytest.mark.asyncio
+async def test_position_duration_slider_is_used_by_position_slider(hass, setup_entry, fake_device) -> None:
+    coordinator = hass.data[DOMAIN][setup_entry.entry_id]
+    dev = fake_device("Simulated Stroker", outputs={bp.POSITION, bp.POSITION_WITH_DURATION})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    assert hass.states.get("number.simulated_stroker_position_duration").state == "0.0"
+
+    await hass.services.async_call(
+        "number", "set_value",
+        {"entity_id": "number.simulated_stroker_position_duration", "value": 1.5},
+        blocking=True,
+    )
+    assert hass.states.get("number.simulated_stroker_position_duration").state == "1.5"
+
+    await hass.services.async_call(
+        "number", "set_value",
+        {"entity_id": "number.simulated_stroker_position", "value": 70},
+        blocking=True,
+    )
+
+    assert dev.sent[-1] == (bp.POSITION_WITH_DURATION, (0.7, 1500))
