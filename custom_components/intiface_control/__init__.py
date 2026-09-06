@@ -12,11 +12,16 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN
-from .coordinator import IntifaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+# Guard: older Home Assistant builds used by some custom-component
+# test/runtime combos don't have this helper. Missing it must not
+# prevent the config flow from loading.
+try:
+    CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+except AttributeError:  # pragma: no cover
+    CONFIG_SCHEMA = vol.Schema({vol.Optional(DOMAIN): {}}, extra=vol.ALLOW_EXTRA)
 
 PLATFORMS = [
     Platform.NUMBER,
@@ -61,7 +66,7 @@ START_PULSE_PATTERN_SCHEMA = vol.Schema(
 STOP_PATTERN_SCHEMA = vol.Schema({**_DEVICE_ID_FIELD})
 
 
-def _resolve_device(hass: HomeAssistant, device_id: str) -> tuple[IntifaceCoordinator, str] | None:
+def _resolve_device(hass: HomeAssistant, device_id: str):
     """Maps a Home Assistant device_id back to the (coordinator, slug)
     pair it represents. Every device we create has an identifier of the
     form (DOMAIN, f"{entry_id}_{slug}") — for each known coordinator and
@@ -96,6 +101,11 @@ def _resolve_device(hass: HomeAssistant, device_id: str) -> tuple[IntifaceCoordi
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    # Imported here so that *loading the config flow* (which imports this
+    # package) does not pull in the buttplug library. A missing or
+    # half-installed requirement must not 500 the "Add integration" form.
+    from .coordinator import IntifaceCoordinator
+
     coordinator = IntifaceCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
 
@@ -173,7 +183,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        coordinator: IntifaceCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
+        coordinator = hass.data[DOMAIN].pop(entry.entry_id)
         # Stop the coordinator's periodic refresh *before* tearing down
         # the client, otherwise a scheduled update can reconnect after
         # we've already decided this entry is gone.

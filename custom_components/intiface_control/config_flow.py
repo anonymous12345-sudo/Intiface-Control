@@ -9,9 +9,12 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult
 
-from . import client as bp
+try:
+    from homeassistant.config_entries import ConfigFlowResult as FlowResult
+except ImportError:  # pragma: no cover - older Home Assistant
+    from homeassistant.data_entry_flow import FlowResult
+
 from .const import (
     CLIENT_NAME,
     CONF_FALLBACK_URL,
@@ -24,12 +27,24 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Schema types MUST stay as plain `str`. Home Assistant serializes this
+# schema to JSON for the frontend when the form opens — a custom
+# voluptuous callable here is a known cause of
+# "Config flow could not be loaded: 500 Internal Server Error".
+# URL rules are enforced after submit instead (see _parse_urls).
 STEP_USER_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_URL, default=DEFAULT_URL): validate_intiface_url,
-        vol.Optional(CONF_FALLBACK_URL): optional_intiface_url,
+        vol.Required(CONF_URL, default=DEFAULT_URL): str,
+        vol.Optional(CONF_FALLBACK_URL): str,
     }
 )
+
+
+def _parse_urls(user_input: dict[str, Any]) -> tuple[str, str | None]:
+    return (
+        validate_intiface_url(user_input[CONF_URL]),
+        optional_intiface_url(user_input.get(CONF_FALLBACK_URL)),
+    )
 
 
 async def _try_connect(url: str) -> None:
@@ -54,7 +69,15 @@ async def _try_connect(url: str) -> None:
     there (a future library version restructured internals), this
     leaves the test connection open rather than falling back to the
     public disconnect() — a lingering open connection is a far smaller
-    problem than stopping someone's toy mid-use."""
+    problem than stopping someone's toy mid-use.
+
+    Buttplug is imported here (not at module load) so the config-flow
+    *form* can still open if the library isn't installed yet; a missing
+    package then shows as cannot_connect instead of a 500 on "Add
+    integration".
+    """
+    from . import client as bp
+
     client = bp.ButtplugClient(CLIENT_NAME)
     await client.connect(url)
     connector = getattr(client, "_connector", None)
@@ -97,21 +120,23 @@ class IntifaceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            url = validate_intiface_url(user_input[CONF_URL])
-            fallback = optional_intiface_url(user_input.get(CONF_FALLBACK_URL))
-
             try:
-                await _test_connection(url, fallback)
-            except Exception:
-                _LOGGER.debug("Connection test failed", exc_info=True)
-                errors["base"] = "cannot_connect"
+                url, fallback = _parse_urls(user_input)
+            except vol.Invalid:
+                errors["base"] = "invalid_url"
             else:
-                await self.async_set_unique_id(url)
-                self._abort_if_unique_id_configured()
-                return self.async_create_entry(
-                    title="Intiface Control",
-                    data={CONF_URL: url, CONF_FALLBACK_URL: fallback},
-                )
+                try:
+                    await _test_connection(url, fallback)
+                except Exception:
+                    _LOGGER.debug("Connection test failed", exc_info=True)
+                    errors["base"] = "cannot_connect"
+                else:
+                    await self.async_set_unique_id(url)
+                    self._abort_if_unique_id_configured()
+                    return self.async_create_entry(
+                        title="Intiface Control",
+                        data={CONF_URL: url, CONF_FALLBACK_URL: fallback},
+                    )
 
         return self.async_show_form(
             step_id="user", data_schema=STEP_USER_SCHEMA, errors=errors
@@ -139,8 +164,7 @@ class IntifaceOptionsFlow(config_entries.OptionsFlow):
 
         if user_input is not None:
             try:
-                url = validate_intiface_url(user_input[CONF_URL])
-                fallback = optional_intiface_url(user_input.get(CONF_FALLBACK_URL))
+                url, fallback = _parse_urls(user_input)
             except vol.Invalid:
                 errors["base"] = "invalid_url"
             else:
@@ -160,41 +184,39 @@ class IntifaceOptionsFlow(config_entries.OptionsFlow):
                         errors["base"] = "already_configured"
                         break
 
-            if not errors:
-                try:
-                    await _test_connection(url, fallback)
-                except Exception:
-                    _LOGGER.debug("Connection test failed", exc_info=True)
-                    errors["base"] = "cannot_connect"
-                else:
-                    new_data = {
-                        **self.config_entry.data,
-                        CONF_URL: url,
-                        CONF_FALLBACK_URL: fallback,
-                    }
-                    self.hass.config_entries.async_update_entry(
-                        self.config_entry, data=new_data, unique_id=url
-                    )
-                    await self.hass.config_entries.async_reload(self.config_entry.entry_id)
-                    # Completing an options flow REPLACES config_entry.options
-                    # wholesale with whatever's passed here — not a merge.
-                    # This flow only ever touches entry.data (the URL) and
-                    # never reads or writes entry.options itself, but other
-                    # state does live there (position-duration preferences,
-                    # see IntifaceCoordinator.async_set_position_duration()).
-                    # Passing {} here would silently wipe that out the next
-                    # time anything reloads or restarts, even though this
-                    # flow never touched it — echo back whatever's already
-                    # there instead of blowing it away.
-                    return self.async_create_entry(title="", data=dict(self.config_entry.options))
+                if not errors:
+                    try:
+                        await _test_connection(url, fallback)
+                    except Exception:
+                        _LOGGER.debug("Connection test failed", exc_info=True)
+                        errors["base"] = "cannot_connect"
+                    else:
+                        new_data = {
+                            **self.config_entry.data,
+                            CONF_URL: url,
+                            CONF_FALLBACK_URL: fallback,
+                        }
+                        self.hass.config_entries.async_update_entry(
+                            self.config_entry, data=new_data, unique_id=url
+                        )
+                        await self.hass.config_entries.async_reload(self.config_entry.entry_id)
+                        # Completing an options flow REPLACES config_entry.options
+                        # wholesale with whatever's passed here — not a merge.
+                        # This flow only ever touches entry.data (the URL) and
+                        # never reads or writes entry.options itself, but other
+                        # state does live there (position-duration preferences,
+                        # see IntifaceCoordinator.async_set_position_duration()).
+                        # Passing {} here would silently wipe that out the next
+                        # time anything reloads or restarts, even though this
+                        # flow never touched it — echo back whatever's already
+                        # there instead of blowing it away.
+                        return self.async_create_entry(title="", data=dict(self.config_entry.options))
 
         current = self.config_entry.data
         schema = vol.Schema(
             {
-                vol.Required(CONF_URL, default=current.get(CONF_URL, DEFAULT_URL)): validate_intiface_url,
-                vol.Optional(
-                    CONF_FALLBACK_URL, default=current.get(CONF_FALLBACK_URL) or ""
-                ): optional_intiface_url,
+                vol.Required(CONF_URL, default=current.get(CONF_URL, DEFAULT_URL)): str,
+                vol.Optional(CONF_FALLBACK_URL, default=current.get(CONF_FALLBACK_URL) or ""): str,
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
