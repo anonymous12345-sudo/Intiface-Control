@@ -27,6 +27,20 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+
+def __getattr__(name: str):
+    """Lazy `config_flow.bp` for tests that still patch `cf.bp.ButtplugClient`.
+
+    Must not import the buttplug client at module load — that is what
+    500'd the Add-integration form when the library was missing.
+    """
+    if name == "bp":
+        from . import client as bp
+
+        return bp
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 # Schema types MUST stay as plain `str`. Home Assistant serializes this
 # schema to JSON for the frontend when the form opens — a custom
 # voluptuous callable here is a known cause of

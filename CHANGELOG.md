@@ -6,7 +6,29 @@ All notable changes to this project are documented here, per release.
 
 - Nothing yet.
 
+## [0.3.12]
+
+### Fixed
+
+- Config-flow tests that still patch `config_flow.bp.ButtplugClient`
+  work again after the library import was deferred (0.3.11). The
+  attribute is resolved lazily so the Add-integration form still
+  does not import `buttplug` just to open.
+
+## [0.3.11]
+
+
+### Fixed
+
+- **"Config flow could not be loaded: 500"** when adding the
+  integration. Home Assistant serializes the form schema to JSON for
+  the frontend; putting custom URL-validator callables in that schema
+  crashed the form before it opened. Validators still run after
+  submit. The flow module also no longer imports `buttplug` just to
+  *show* the form.
+
 ## [0.3.10]
+
 
 ### Fixed
 

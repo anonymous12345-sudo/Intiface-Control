@@ -352,6 +352,7 @@ async def test_try_connect_never_stops_every_device_on_the_server(monkeypatch) -
     toy currently running via this integration's own already-connected
     coordinator too. _try_connect() must close the connection without
     ever triggering that."""
+    from custom_components.intiface_control import client as bp_client
     from custom_components.intiface_control import config_flow as cf
 
     created = []
@@ -361,7 +362,7 @@ async def test_try_connect_never_stops_every_device_on_the_server(monkeypatch) -
             super().__init__(name)
             created.append(self)
 
-    monkeypatch.setattr(cf.bp, "ButtplugClient", TrackedClient)
+    monkeypatch.setattr(bp_client, "ButtplugClient", TrackedClient)
 
     await cf._try_connect("ws://fake:12345")
 
@@ -378,6 +379,7 @@ async def test_try_connect_does_not_crash_without_a_connector_attribute(monkeypa
     is gone, _try_connect() must degrade gracefully (leave the test
     connection open rather than crash) — and must NOT fall back to the
     dangerous client.disconnect()."""
+    from custom_components.intiface_control import client as bp_client
     from custom_components.intiface_control import config_flow as cf
 
     class MinimalClient:
@@ -387,6 +389,6 @@ async def test_try_connect_does_not_crash_without_a_connector_attribute(monkeypa
         async def connect(self, url):
             pass
 
-    monkeypatch.setattr(cf.bp, "ButtplugClient", MinimalClient)
+    monkeypatch.setattr(bp_client, "ButtplugClient", MinimalClient)
 
     await cf._try_connect("ws://fake:12345")  # must not raise
