@@ -501,6 +501,7 @@ async def run_wave_pattern(devs_getter, target_label: str, repeat: int, min_spee
             await _run_wave_cycle(devs_getter, min_speed, max_speed, duration)
     except asyncio.CancelledError:
         _LOGGER.info("Wave pattern for %s was cancelled.", target_label)
+        raise
     finally:
         for dev in devs_getter():
             await _stop_intensity_only(dev)
@@ -518,6 +519,7 @@ async def run_pulse_pattern(
             await _run_pulse_cycle(devs_getter, low_speed, high_speed, low_duration, high_duration)
     except asyncio.CancelledError:
         _LOGGER.info("Pulse pattern for %s was cancelled.", target_label)
+        raise
     finally:
         for dev in devs_getter():
             await _stop_intensity_only(dev)

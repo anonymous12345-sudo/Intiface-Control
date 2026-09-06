@@ -12,14 +12,22 @@ from homeassistant.core import callback
 from homeassistant.data_entry_flow import FlowResult
 
 from . import client as bp
-from .const import CLIENT_NAME, CONF_FALLBACK_URL, CONF_URL, DEFAULT_URL, DOMAIN
+from .const import (
+    CLIENT_NAME,
+    CONF_FALLBACK_URL,
+    CONF_URL,
+    DEFAULT_URL,
+    DOMAIN,
+    optional_intiface_url,
+    validate_intiface_url,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 STEP_USER_SCHEMA = vol.Schema(
     {
-        vol.Required(CONF_URL, default=DEFAULT_URL): str,
-        vol.Optional(CONF_FALLBACK_URL): str,
+        vol.Required(CONF_URL, default=DEFAULT_URL): validate_intiface_url,
+        vol.Optional(CONF_FALLBACK_URL): optional_intiface_url,
     }
 )
 
@@ -89,11 +97,11 @@ class IntifaceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            url = user_input[CONF_URL].strip()
-            fallback = (user_input.get(CONF_FALLBACK_URL) or "").strip()
+            url = validate_intiface_url(user_input[CONF_URL])
+            fallback = optional_intiface_url(user_input.get(CONF_FALLBACK_URL))
 
             try:
-                await _test_connection(url, fallback or None)
+                await _test_connection(url, fallback)
             except Exception:
                 _LOGGER.debug("Connection test failed", exc_info=True)
                 errors["base"] = "cannot_connect"
@@ -102,7 +110,7 @@ class IntifaceConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self._abort_if_unique_id_configured()
                 return self.async_create_entry(
                     title="Intiface Control",
-                    data={CONF_URL: url, CONF_FALLBACK_URL: fallback or None},
+                    data={CONF_URL: url, CONF_FALLBACK_URL: fallback},
                 )
 
         return self.async_show_form(
@@ -130,28 +138,31 @@ class IntifaceOptionsFlow(config_entries.OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            url = user_input[CONF_URL].strip()
-            fallback = (user_input.get(CONF_FALLBACK_URL) or "").strip()
-
-            # A config entry's unique_id is the URL it was originally set
-            # up with (see IntifaceConfigFlow.async_step_user above). If
-            # we update this entry's data/URL without also updating its
-            # unique_id, this entry keeps pointing at a URL that no
-            # longer matches its own unique_id — meaning a *second*
-            # config entry could later be added for that same new URL
-            # without Home Assistant recognizing it as a duplicate, and
-            # now two entries (two coordinators, two full sets of
-            # entities) both talk to the same Intiface server. Guard
-            # against that directly: refuse if some *other* entry
-            # already claims this URL as its unique_id.
-            for other_entry in self.hass.config_entries.async_entries(DOMAIN):
-                if other_entry.entry_id != self.config_entry.entry_id and other_entry.unique_id == url:
-                    errors["base"] = "already_configured"
-                    break
+            try:
+                url = validate_intiface_url(user_input[CONF_URL])
+                fallback = optional_intiface_url(user_input.get(CONF_FALLBACK_URL))
+            except vol.Invalid:
+                errors["base"] = "invalid_url"
+            else:
+                # A config entry's unique_id is the URL it was originally set
+                # up with (see IntifaceConfigFlow.async_step_user above). If
+                # we update this entry's data/URL without also updating its
+                # unique_id, this entry keeps pointing at a URL that no
+                # longer matches its own unique_id — meaning a *second*
+                # config entry could later be added for that same new URL
+                # without Home Assistant recognizing it as a duplicate, and
+                # now two entries (two coordinators, two full sets of
+                # entities) both talk to the same Intiface server. Guard
+                # against that directly: refuse if some *other* entry
+                # already claims this URL as its unique_id.
+                for other_entry in self.hass.config_entries.async_entries(DOMAIN):
+                    if other_entry.entry_id != self.config_entry.entry_id and other_entry.unique_id == url:
+                        errors["base"] = "already_configured"
+                        break
 
             if not errors:
                 try:
-                    await _test_connection(url, fallback or None)
+                    await _test_connection(url, fallback)
                 except Exception:
                     _LOGGER.debug("Connection test failed", exc_info=True)
                     errors["base"] = "cannot_connect"
@@ -159,7 +170,7 @@ class IntifaceOptionsFlow(config_entries.OptionsFlow):
                     new_data = {
                         **self.config_entry.data,
                         CONF_URL: url,
-                        CONF_FALLBACK_URL: fallback or None,
+                        CONF_FALLBACK_URL: fallback,
                     }
                     self.hass.config_entries.async_update_entry(
                         self.config_entry, data=new_data, unique_id=url
@@ -180,9 +191,10 @@ class IntifaceOptionsFlow(config_entries.OptionsFlow):
         current = self.config_entry.data
         schema = vol.Schema(
             {
-                vol.Required(CONF_URL, default=current.get(CONF_URL, DEFAULT_URL)): str,
-                vol.Optional(CONF_FALLBACK_URL, default=current.get(CONF_FALLBACK_URL) or ""): str,
+                vol.Required(CONF_URL, default=current.get(CONF_URL, DEFAULT_URL)): validate_intiface_url,
+                vol.Optional(
+                    CONF_FALLBACK_URL, default=current.get(CONF_FALLBACK_URL) or ""
+                ): optional_intiface_url,
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
-

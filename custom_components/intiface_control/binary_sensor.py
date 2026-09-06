@@ -65,7 +65,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     # async_setup_entry for the full reasoning (closes a real gap where
     # a device discovered between snapshot and registration would be
     # missed until a full restart).
-    coordinator.add_new_device_listener(_add_for_new_devices)
+    entry.async_on_unload(coordinator.add_new_device_listener(_add_for_new_devices))
     initial = [
         (slug, info["device"], info["capabilities"])
         for slug, info in (coordinator.data or {}).items()

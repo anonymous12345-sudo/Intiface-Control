@@ -6,6 +6,7 @@ import logging
 
 import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
@@ -15,7 +16,15 @@ from .coordinator import IntifaceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = ["number", "binary_sensor", "sensor", "switch", "light"]
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+PLATFORMS = [
+    Platform.NUMBER,
+    Platform.BINARY_SENSOR,
+    Platform.SENSOR,
+    Platform.SWITCH,
+    Platform.LIGHT,
+]
 
 SERVICE_START_WAVE_PATTERN = "start_wave_pattern"
 SERVICE_START_PULSE_PATTERN = "start_pulse_pattern"
@@ -165,6 +174,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         coordinator: IntifaceCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
+        # Stop the coordinator's periodic refresh *before* tearing down
+        # the client, otherwise a scheduled update can reconnect after
+        # we've already decided this entry is gone.
+        if hasattr(coordinator, "async_shutdown"):
+            await coordinator.async_shutdown()
         await coordinator.async_shutdown_client()
 
         if not hass.data.get(DOMAIN):

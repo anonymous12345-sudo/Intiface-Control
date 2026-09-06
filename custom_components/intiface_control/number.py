@@ -12,7 +12,7 @@ import logging
 from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.entity import DeviceInfo, EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -191,6 +191,7 @@ class IntifacePositionDurationNumber(CoordinatorEntity[IntifaceCoordinator], Num
     _attr_has_entity_name = True
     _attr_translation_key = "position_duration"
     _attr_icon = "mdi:timer-outline"
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, coordinator: IntifaceCoordinator, entry_id: str, slug: str, name: str) -> None:
         super().__init__(coordinator)
@@ -239,7 +240,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     # deduplicates in case the same device is caught by both this
     # listener and the snapshot below (harmless either way, just
     # avoiding creating its entities twice).
-    coordinator.add_new_device_listener(_add_for_new_devices)
+    entry.async_on_unload(coordinator.add_new_device_listener(_add_for_new_devices))
     initial = [
         (slug, info["device"], info["capabilities"])
         for slug, info in (coordinator.data or {}).items()

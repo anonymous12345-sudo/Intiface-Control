@@ -467,6 +467,27 @@ async def test_battery_repolled_after_the_interval_elapses(coordinator, fake_dev
 
 
 @pytest.mark.asyncio
+async def test_battery_cache_cleared_when_device_goes_offline(coordinator, fake_device) -> None:
+    """A short disconnect used to reuse the cached battery on reconnect
+    because the 60s interval had not elapsed. The cache for a slug must
+    be dropped when that slug leaves the connected set."""
+    dev = fake_device("Lovense Hush", outputs={bp.VIBRATE}, battery=0.9)
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+    assert coordinator.data["lovense_hush"]["battery"] == 90.0
+
+    coordinator._bp_client.devices = {}
+    await coordinator.async_refresh()
+    assert "lovense_hush" not in coordinator._last_battery_poll
+
+    dev._battery = 0.4
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+    assert coordinator.data["lovense_hush"]["battery"] == 40.0
+
+
+
+@pytest.mark.asyncio
 async def test_position_duration_defaults_to_instant_move(coordinator, fake_device) -> None:
     """Before any duration is ever set for a slug, moves must behave
     exactly as they did before this feature existed — instant."""

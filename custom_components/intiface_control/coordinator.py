@@ -18,6 +18,7 @@ import asyncio
 import logging
 from datetime import timedelta
 from typing import Any
+from urllib.parse import urlparse
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -26,6 +27,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from . import client as bp
 from .const import (
+    ALLOWED_URL_SCHEMES,
     BATTERY_POLL_INTERVAL_SECONDS,
     CLIENT_NAME,
     CONF_FALLBACK_URL,
@@ -51,6 +53,21 @@ def _clamp(value: float, lo: float, hi: float) -> float:
     something outside the range it was ever meant to represent, no
     matter how it got here."""
     return max(lo, min(hi, value))
+
+
+def _safe_connect_url(url: str | None) -> str | None:
+    """Refuse to open a connection to anything that isn't a WebSocket URL.
+
+    Config-flow validation already enforces this for new input; this is
+    the runtime backstop for an older config entry or a hand-edited
+    .storage file."""
+    if not url:
+        return None
+    parsed = urlparse(url.strip())
+    if parsed.scheme not in ALLOWED_URL_SCHEMES or not parsed.hostname:
+        _LOGGER.error("Refusing to connect to invalid Intiface URL: %s", url)
+        return None
+    return url.strip()
 
 
 class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
@@ -198,9 +215,11 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
 
             c = bp.ButtplugClient(CLIENT_NAME)
             last_err: Exception | None = None
-            for url in (self.url, self.fallback_url):
+            attempted = False
+            for url in (_safe_connect_url(self.url), _safe_connect_url(self.fallback_url)):
                 if not url:
                     continue
+                attempted = True
                 try:
                     _LOGGER.debug("Connecting to %s", url)
                     await c.connect(url)
@@ -209,15 +228,20 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 except Exception as exc:
                     last_err = exc
                     _LOGGER.warning("Connect to %s failed: %s", url, exc)
+            if not attempted:
+                raise UpdateFailed("No valid ws:// or wss:// Intiface URL configured")
             if last_err is not None:
                 raise UpdateFailed(f"Could not connect to Intiface: {last_err}") from last_err
 
             self._bp_client = c
-            if hasattr(c, "start_scanning"):
-                await c.start_scanning()
-                await asyncio.sleep(2)
-                if hasattr(c, "stop_scanning"):
-                    await c.stop_scanning()
+            try:
+                if hasattr(c, "start_scanning"):
+                    await c.start_scanning()
+                    await asyncio.sleep(2)
+                    if hasattr(c, "stop_scanning"):
+                        await c.stop_scanning()
+            except Exception as exc:
+                _LOGGER.warning("Device scan failed after connect: %s", exc)
             _LOGGER.info("Connected, devices: %s", [getattr(d, "name", "?") for d in self._devices()])
 
     async def _poll_battery(self, slug: str, dev) -> float | None:
@@ -229,7 +253,7 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         this same check to naturally expire) always polls immediately,
         so a connected device is never shown without a battery value
         while this cache is still warming up."""
-        now = asyncio.get_event_loop().time()
+        now = asyncio.get_running_loop().time()
         last_poll = self._last_battery_poll.get(slug)
         if last_poll is None or (now - last_poll) >= BATTERY_POLL_INTERVAL_SECONDS:
             battery = await bp.read_battery(dev)
@@ -329,10 +353,21 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
                 self.known_slugs.add(slug)
                 new_devices.append((slug, dev, caps))
 
+        # Drop stale battery cache for toys that are no longer connected
+        # so a short disconnect/reconnect doesn't keep a reading that's
+        # older than it looks (the interval check would otherwise reuse it).
+        stale_battery = [s for s in self._last_battery_poll if s not in data]
+        for slug in stale_battery:
+            self._last_battery_poll.pop(slug, None)
+            self._battery_cache.pop(slug, None)
+
         if new_devices:
             _LOGGER.info("New device(s) discovered: %s", [n for n, _, _ in new_devices])
-            for callback in self._new_device_listeners:
-                callback(new_devices)
+            for callback in list(self._new_device_listeners):
+                try:
+                    callback(new_devices)
+                except Exception:
+                    _LOGGER.exception("New-device listener failed")
 
         return data
 
@@ -404,8 +439,14 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         to display instead."""
         if self._active_patterns.get(slug) is task:
             self._active_patterns.pop(slug, None)
-            for callback in self._stop_listeners:
-                callback(slug)
+            self._notify_stop_listeners(slug)
+
+    def _notify_stop_listeners(self, affected_slug: str | None) -> None:
+        for callback in list(self._stop_listeners):
+            try:
+                callback(affected_slug)
+            except Exception:
+                _LOGGER.debug("Stop listener failed for %s", affected_slug, exc_info=True)
 
     def _prune_finished_patterns(self) -> None:
         """Same "only the first to notice cleans up" logic as
@@ -414,8 +455,7 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         finds nothing left to do."""
         for slug in [s for s, task in self._active_patterns.items() if task.done()]:
             self._active_patterns.pop(slug, None)
-            for callback in self._stop_listeners:
-                callback(slug)
+            self._notify_stop_listeners(slug)
 
     async def async_start_wave_pattern(
         self,
@@ -441,10 +481,10 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             bp.run_wave_pattern(
                 lambda: self._devices_matching(slug),
                 slug,
-                repeat,
-                min_speed_percent / 100.0,
-                max_speed_percent / 100.0,
-                duration,
+                int(_clamp(repeat, 1, 100)),
+                _clamp(min_speed_percent, 0, 100) / 100.0,
+                _clamp(max_speed_percent, 0, 100) / 100.0,
+                _clamp(duration, 0.2, 60),
             )
         )
         task.add_done_callback(lambda t, s=slug: self._on_pattern_task_done(s, t))
@@ -475,11 +515,11 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             bp.run_pulse_pattern(
                 lambda: self._devices_matching(slug),
                 slug,
-                repeat,
-                low_speed_percent / 100.0,
-                high_speed_percent / 100.0,
-                low_duration,
-                high_duration,
+                int(_clamp(repeat, 1, 100)),
+                _clamp(low_speed_percent, 0, 100) / 100.0,
+                _clamp(high_speed_percent, 0, 100) / 100.0,
+                _clamp(low_duration, 0.2, 60),
+                _clamp(high_duration, 0.2, 60),
             )
         )
         task.add_done_callback(lambda t, s=slug: self._on_pattern_task_done(s, t))
@@ -553,6 +593,8 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         or a reload (e.g. from the options flow's URL change) instead
         of silently resetting to 0."""
         duration_ms = int(_clamp(duration_ms, 0, 10000))
+        if self.position_duration_ms.get(slug) == duration_ms:
+            return
         self.position_duration_ms[slug] = duration_ms
         self.hass.config_entries.async_update_entry(
             self.config_entry,
@@ -598,8 +640,7 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             await self._cancel_pattern(t)
         for dev in self._devices():
             await bp.stop_device(dev)
-        for callback in self._stop_listeners:
-            callback(None)
+        self._notify_stop_listeners(None)
 
     def async_clear_stop(self) -> None:
         """Turns the global gate back off (does not resume anything by
@@ -618,8 +659,7 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         dev = self.get_device(slug)
         if dev is not None:
             await bp.stop_device(dev)
-        for callback in self._stop_listeners:
-            callback(slug)
+        self._notify_stop_listeners(slug)
 
     def async_clear_device_stop(self, slug: str) -> None:
         """Turns a single device's gate back off."""

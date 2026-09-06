@@ -6,7 +6,53 @@ All notable changes to this project are documented here, per release.
 
 - Nothing yet.
 
+## [0.3.10]
+
+### Fixed
+
+- **WebSocket URLs are now validated.** Setup and the options flow
+  only accept `ws://` or `wss://` with a host — `http://`, `file://`,
+  empty strings, and other schemes are rejected before any connection
+  is attempted. The coordinator also refuses to open a connection to
+  an invalid stored URL (runtime backstop for a hand-edited config).
+- **Platform new-device listeners leaked across a platform reload.**
+  Each platform registered a callback on the coordinator and never
+  unsubscribed it. Unloading just one platform (or reloading it)
+  left the old callback attached, so the next discovery could create
+  entities twice. Listeners are now tied to the config entry unload
+  hook.
+- **Pattern cancellation swallowed `CancelledError`.** Wave/pulse
+  tasks caught cancellation, cleaned up, and then completed as if
+  they had finished normally — `task.cancelled()` stayed false and
+  the cancellation didn't propagate. Cleanup still runs; the error
+  is now re-raised afterwards.
+- **Unload left the coordinator's refresh timer running.** After
+  removing a config entry the periodic update could still fire and
+  reconnect to Intiface. Unload now shuts the coordinator down
+  before disconnecting the client.
+- **A dead stop/new-device listener could abort the rest.** Listeners
+  are now copied and isolated so one failing callback doesn't skip
+  every other entity's reset on emergency stop.
+- **Dragging the position-duration slider rewrote config-entry
+  options on every identical value.** Unchanged values are skipped.
+- **Battery cache survived a disconnect.** A toy that dropped off
+  and came back within 60s reused the old reading. The cache for a
+  slug is now cleared when that slug leaves the connected set.
+- **A failed `start_scanning()` after a successful connect used to
+  fail the whole coordinator update.** Scan errors are logged and
+  the already-open connection is kept.
+
+### Changed
+
+- `buttplug` is pinned to `>=1.0.0,<2` in the manifest so Home
+  Assistant doesn't silently install an incompatible major version.
+- Position duration is marked as a config entity (settings, not
+  primary control).
+- Added `CONFIG_SCHEMA` (`config_entry_only`) and `Platform` enums
+  for hassfest / current Home Assistant style.
+
 ## [0.3.9]
+
 
 ### Fixed
 

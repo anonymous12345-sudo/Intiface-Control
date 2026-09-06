@@ -123,7 +123,7 @@ you'll need to repeat this process to pick up a new version.
    its main screen — typically something like `ws://192.168.x.x:12345`.
 2. In Home Assistant: **Settings → Devices & services → Add integration**,
    search for **"Intiface Control"**.
-3. Enter the Intiface WebSocket URL. A fallback URL is optional, for
+3. Enter the Intiface WebSocket URL (`ws://` or `wss://` only). A fallback URL is optional, for
    setups where Intiface might be reachable at more than one address
    (e.g. it moves between networks).
 4. Home Assistant tests the connection immediately — if it can't

@@ -11,7 +11,8 @@
       }
     },
     "error": {
-      "cannot_connect": "Could not connect to Intiface at that URL."
+      "cannot_connect": "Could not connect to Intiface at that URL.",
+      "invalid_url": "Enter a WebSocket URL starting with ws:// or wss://"
     },
     "abort": {
       "already_configured": "This Intiface server is already configured."
@@ -30,7 +31,8 @@
     },
     "error": {
       "cannot_connect": "Could not connect to Intiface at that URL.",
-      "already_configured": "Another Intiface Control entry is already using this URL."
+      "already_configured": "Another Intiface Control entry is already using this URL.",
+      "invalid_url": "Enter a WebSocket URL starting with ws:// or wss://"
     }
   },
   "entity": {

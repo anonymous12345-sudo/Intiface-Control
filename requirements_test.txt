@@ -5,4 +5,4 @@
 pytest
 pytest-asyncio
 pytest-homeassistant-custom-component
-buttplug
+buttplug>=1.0.0,<2

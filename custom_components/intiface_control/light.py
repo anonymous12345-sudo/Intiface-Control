@@ -93,7 +93,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
     # Listener registered BEFORE the snapshot — see number.py's
     # async_setup_entry for the full reasoning.
-    coordinator.add_new_device_listener(_add_for_new_devices)
+    entry.async_on_unload(coordinator.add_new_device_listener(_add_for_new_devices))
     initial = [
         (slug, info["device"], info["capabilities"])
         for slug, info in (coordinator.data or {}).items()
