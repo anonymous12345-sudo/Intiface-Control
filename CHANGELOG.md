@@ -52,9 +52,6 @@ All notable changes to this project are documented here, per release.
   every other entity's reset on emergency stop.
 - **Dragging the position-duration slider rewrote config-entry
   options on every identical value.** Unchanged values are skipped.
-- **Battery cache survived a disconnect.** A toy that dropped off
-  and came back within 60s reused the old reading. The cache for a
-  slug is now cleared when that slug leaves the connected set.
 - **A failed `start_scanning()` after a successful connect used to
   fail the whole coordinator update.** Scan errors are logged and
   the already-open connection is kept.
@@ -67,6 +64,13 @@ All notable changes to this project are documented here, per release.
   primary control).
 - Added `CONFIG_SCHEMA` (`config_entry_only`) and `Platform` enums
   for hassfest / current Home Assistant style.
+- **Battery cache is now cleared on disconnect instead of reused on
+  reconnect.** Not a bug fix — reusing the cached value for up to 60s
+  after a reconnect was a deliberate choice to avoid an unnecessary
+  network round-trip for a value that only moves over hours. This
+  trades that off the other way: a reconnect (even a brief one) now
+  always polls fresh, favoring an up-to-date reading over saving that
+  one request.
 
 ## [0.3.9]
 
