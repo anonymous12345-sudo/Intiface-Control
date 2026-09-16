@@ -312,6 +312,8 @@ async def test_led_light_entity_end_to_end(hass, setup_entry, fake_device) -> No
 
 @pytest.mark.asyncio
 async def test_rotation_slider_end_to_end(hass, setup_entry, fake_device) -> None:
+    """The Rotation speed number is unsigned (0-100); direction comes
+    from the companion Clockwise switch, defaulting to on (clockwise)."""
     coordinator = hass.data[DOMAIN][setup_entry.entry_id]
     dev = fake_device("Rotator", outputs={bp.ROTATE})
     coordinator._bp_client.devices = {0: dev}
@@ -319,15 +321,72 @@ async def test_rotation_slider_end_to_end(hass, setup_entry, fake_device) -> Non
     await hass.async_block_till_done()
 
     assert hass.states.get("number.rotator_intensity") is None, "rotate must not create an Intensity entity"
-    assert hass.states.get("number.rotator_rotation") is not None
+    assert hass.states.get("number.rotator_rotation_speed") is not None
+    assert hass.states.get("switch.rotator_rotation_direction").state == "on", "clockwise is the default direction"
 
     await hass.services.async_call(
         "number", "set_value",
-        {"entity_id": "number.rotator_rotation", "value": -80},
+        {"entity_id": "number.rotator_rotation_speed", "value": 80},
         blocking=True,
     )
-    assert hass.states.get("number.rotator_rotation").state == "-80.0"
-    assert dev.sent[-1] == (bp.ROTATE, (-0.8,))
+    assert hass.states.get("number.rotator_rotation_speed").state == "80.0"
+    assert dev.sent[-1] == (bp.ROTATE, (0.8,)), "clockwise (default) speed must be sent as a positive value"
+
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": "switch.rotator_rotation_direction"}, blocking=True
+    )
+    assert hass.states.get("switch.rotator_rotation_direction").state == "off"
+    assert dev.sent[-1] == (bp.ROTATE, (-0.8,)), (
+        "flipping direction while already spinning must immediately re-send "
+        "the same speed with the flipped sign, without touching the slider"
+    )
+    assert hass.states.get("number.rotator_rotation_speed").state == "80.0", (
+        "the speed slider itself must not move just because direction changed"
+    )
+
+    await hass.services.async_call(
+        "number", "set_value",
+        {"entity_id": "number.rotator_rotation_speed", "value": 30},
+        blocking=True,
+    )
+    assert dev.sent[-1] == (bp.ROTATE, (-0.3,)), "speed changes must keep using whichever direction is currently set"
+
+
+@pytest.mark.asyncio
+async def test_rotation_direction_flip_while_stopped_does_not_resume_spinning(hass, setup_entry, fake_device) -> None:
+    """Flipping the Clockwise switch after a speed of 0 (or after an
+    emergency stop) must never make a toy start spinning on its own —
+    only an explicit speed command should ever do that."""
+    coordinator = hass.data[DOMAIN][setup_entry.entry_id]
+    dev = fake_device("Rotator", outputs={bp.ROTATE})
+    coordinator._bp_client.devices = {0: dev}
+    await coordinator.async_refresh()
+    await hass.async_block_till_done()
+
+    # Never spun yet — flipping direction should send nothing at all.
+    await hass.services.async_call(
+        "switch", "turn_off", {"entity_id": "switch.rotator_rotation_direction"}, blocking=True
+    )
+    assert dev.sent == []
+
+    # Now actually spin it, then hit the global stop.
+    await hass.services.async_call(
+        "number", "set_value",
+        {"entity_id": "number.rotator_rotation_speed", "value": 50},
+        blocking=True,
+    )
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": "switch.stop_all_toys"}, blocking=True
+    )
+    assert hass.states.get("number.rotator_rotation_speed").state == "0.0"
+    dev.sent.clear()
+
+    # Flipping direction post-stop must stay silent — the remembered
+    # "last speed" was cleared by the stop, so there's nothing to resend.
+    await hass.services.async_call(
+        "switch", "turn_on", {"entity_id": "switch.rotator_rotation_direction"}, blocking=True
+    )
+    assert dev.sent == []
 
 
 @pytest.mark.asyncio
@@ -351,7 +410,7 @@ async def test_refused_rotation_and_position_commands_reset_to_zero(hass, setup_
 
     await hass.services.async_call(
         "number", "set_value",
-        {"entity_id": "number.rotator_rotation", "value": -80},
+        {"entity_id": "number.rotator_rotation_speed", "value": 80},
         blocking=True,
     )
     await hass.services.async_call(
@@ -360,7 +419,7 @@ async def test_refused_rotation_and_position_commands_reset_to_zero(hass, setup_
         blocking=True,
     )
     assert dev.sent == [], "no command should reach the device while the stop switch is on"
-    assert hass.states.get("number.rotator_rotation").state == "0.0"
+    assert hass.states.get("number.rotator_rotation_speed").state == "0.0"
     assert hass.states.get("number.rotator_position").state == "0.0"
 
     await hass.services.async_call(
@@ -368,11 +427,11 @@ async def test_refused_rotation_and_position_commands_reset_to_zero(hass, setup_
     )
     await hass.services.async_call(
         "number", "set_value",
-        {"entity_id": "number.rotator_rotation", "value": -80},
+        {"entity_id": "number.rotator_rotation_speed", "value": 80},
         blocking=True,
     )
-    assert hass.states.get("number.rotator_rotation").state == "-80.0"
-    assert dev.sent[-1] == (bp.ROTATE, (-0.8,))
+    assert hass.states.get("number.rotator_rotation_speed").state == "80.0"
+    assert dev.sent[-1] == (bp.ROTATE, (0.8,))
 
 
 @pytest.mark.asyncio

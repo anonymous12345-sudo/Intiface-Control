@@ -9,5 +9,5 @@
   "issue_tracker": "https://github.com/anonymous12345-sudo/intiface-control/issues",
   "loggers": ["custom_components.intiface_control"],
   "requirements": ["buttplug>=1.0.0,<2"],
-  "version": "0.4.1"
+  "version": "0.5.0"
 }

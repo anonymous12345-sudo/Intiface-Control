@@ -56,7 +56,8 @@ For every connected toy, grouped under one Home Assistant **device**:
 | Entity | When it's created | What it does |
 |---|---|---|
 | `number` — Intensity | Device supports vibrate, oscillate, constrict, temperature, or spray | 0–100% slider. Automatically uses whichever of those output types the device actually supports. |
-| `number` — Rotation | Device supports rotate | -100–100 signed slider — positive is clockwise, negative counter-clockwise, 0 is stopped. Kept separate from Intensity above since buttplug documents Rotate's range as signed specifically to represent direction, which a 0-100% slider can't express. |
+| `number` — Rotation speed | Device supports rotate | 0–100% unsigned slider — 0 is stopped, 100 is full speed. Kept separate from Intensity above since Rotate needs a direction alongside its speed, which the plain Intensity slider has no way to express. |
+| `switch` — Clockwise | Device supports rotate | Companion to Rotation speed above. On (the default) sends the speed as a positive value (clockwise); off sends it negative (counter-clockwise). Flipping it while the toy is already spinning re-sends the current speed with the new sign immediately, not just on the next touch of the speed slider. |
 | `number` — Position | Device supports Position or PositionWithDuration | 0–100% slider for linear devices (e.g. a stroker). Uses whatever duration is set on the companion "Position duration" entity below (0/instant if that's never been touched). |
 | `number` — Position duration | Same as Position above | 0–10 second slider controlling how long the Position slider's *next* move takes. A stored preference, not a toy command by itself — moving only this slider never sends anything to the device. Persisted on the config entry, so it survives a Home Assistant restart instead of resetting to 0. |
 | `light` — LED | Device supports Led | Brightness-only light control. Modeled as a real Home Assistant light (not another generic slider), since that's the idiomatic representation for a light. |
@@ -303,7 +304,7 @@ Notes:
   disabled toy simply refuses to start a pattern at all, rather than
   silently being excluded from one running on other toys.
 - When a pattern finishes on its own (runs out its full repeat count,
-  nobody stopped it early), its toy's Intensity/Rotation/Position
+  nobody stopped it early), its toy's Intensity/Rotation speed/Position
   sliders reset to 0 automatically, matching what the toy itself
   already did — not just when an emergency stop or a service call ends
   it early.
@@ -411,12 +412,15 @@ that toy's entity IDs out from under it every time).
   devices. If something behaves oddly on real hardware of that type,
   check the Home Assistant logs at debug level; the underlying client
   code logs which specific attempt succeeded or failed. Rotation in
-  particular: buttplug's spec documents the value range for Rotate as
-  signed to support direction, and that's what this integration sends,
-  but a specific device's *actual* supported range (e.g. whether it can
+  particular: the Rotation speed slider and Clockwise switch together
+  produce the signed value buttplug's Rotate spec expects, but a
+  specific device's *actual* supported range (e.g. whether it can
   really reverse, or only spin one way) isn't something this
   integration can introspect — only Intiface itself knows that per
-  device, and is expected to handle it appropriately.
+  device, and is expected to handle it appropriately. A device that
+  only spins one way will simply do nothing extra when the Clockwise
+  switch is turned off, the same as it always did with the old signed
+  slider's negative half.
 - `Pressure` is implemented but genuinely unverified against real
   hardware — the exact value scale/units buttplug reports for it aren't
   confirmed, so the sensor has no unit or device class and is disabled

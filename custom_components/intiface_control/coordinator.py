@@ -113,6 +113,26 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             entry.options.get("position_duration_ms", {})
         )
 
+        # Preferred spin direction per rotating device (True = clockwise,
+        # i.e. a positive signed value) — a stored preference set via its
+        # own switch entity, same persistence pattern as
+        # position_duration_ms above, so it survives a restart instead of
+        # quietly resetting to clockwise. Missing means clockwise (see
+        # get_rotation_direction() below), matching Rotate's positive-
+        # is-default convention.
+        self.rotation_direction: dict[str, bool] = dict(
+            entry.options.get("rotation_direction", {})
+        )
+        # Last unsigned speed (0-100) successfully applied via
+        # async_apply_rotation_speed() below, per slug — lets
+        # async_set_rotation_direction() re-send immediately with the
+        # flipped sign while a toy is already spinning, rather than only
+        # affecting the next manual touch of the speed slider. Reset to 0
+        # whenever a stop engages (see async_stop_all/async_stop_device)
+        # so flipping direction after an emergency stop can never resume
+        # a toy on its own.
+        self._last_rotation_speed: dict[str, float] = {}
+
         # True while the emergency-stop switch is on. Acts as a real gate:
         # every control method below refuses to send anything while this
         # is set, not just a one-off stop at the moment the switch flips.
@@ -554,7 +574,17 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         """signed_percent is -100..100 — positive clockwise, negative
         counter-clockwise. Same gate checks as async_apply_intensity, and
         also cancels any pattern running on this slug (a direct command
-        overriding a running pattern, same as intensity/position do)."""
+        overriding a running pattern, same as intensity/position do).
+
+        This is the low-level signed entrypoint — the Rotation number
+        entity no longer calls this directly (see
+        async_apply_rotation_speed() below for the unsigned,
+        direction-combining entrypoint it uses instead); kept as its own
+        method since it's still the one thing client.py's apply_rotation()
+        actually understands, and a straightforward target for anyone
+        scripting a rotate command directly (e.g. via a future service)
+        who wants full signed control without going through direction
+        state at all."""
         if self.stopped:
             _LOGGER.warning("Ignoring rotation command for %s: stop switch is on", slug)
             return False
@@ -566,6 +596,62 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         if dev is None:
             return False
         return await bp.apply_rotation(dev, _clamp(signed_percent, -100, 100) / 100.0)
+
+    def get_rotation_direction(self, slug: str) -> bool:
+        """True = clockwise (a positive signed value) — the default for
+        a device whose direction has never been explicitly set."""
+        return self.rotation_direction.get(slug, True)
+
+    async def async_set_rotation_direction(self, slug: str, clockwise: bool) -> None:
+        """Stores the preferred spin direction for a slug and persists it
+        to the config entry's options (see rotation_direction in
+        __init__), same pattern as async_set_position_duration(). If the
+        device is currently spinning (its last known speed is > 0), also
+        re-sends that same speed with the new sign before returning —
+        without this, flipping the switch on a running toy would
+        silently do nothing until the speed slider itself was touched
+        again, which isn't what flipping a direction switch on a live
+        toy should feel like. Genuinely awaited here (not scheduled via
+        hass.async_create_task, which only *plans* the re-send without
+        the caller ever waiting for it) so a caller that awaits this
+        method is guaranteed the re-send has actually happened by the
+        time it returns, not just "soon"."""
+        if self.rotation_direction.get(slug, True) == clockwise:
+            return
+        self.rotation_direction[slug] = clockwise
+        self.hass.config_entries.async_update_entry(
+            self.config_entry,
+            options={
+                **self.config_entry.options,
+                "rotation_direction": dict(self.rotation_direction),
+            },
+        )
+        speed = self._last_rotation_speed.get(slug, 0.0)
+        if speed > 0:
+            await self.async_apply_rotation_speed(slug, speed)
+
+    async def async_apply_rotation_speed(self, slug: str, percent: float) -> bool:
+        """percent is 0-100, unsigned — the entrypoint the Rotation
+        speed number entity actually calls. Combines it with whichever
+        direction is currently stored for this slug (see
+        get_rotation_direction()) into the signed value Rotate expects
+        under the hood, via async_apply_rotation() above. Splitting speed
+        and direction into two separate 0-100 / clockwise-counter-
+        clockwise entities like this means the speed slider itself never
+        has to pass through a negative range or land exactly on a
+        specific value just to represent 'stopped vs a direction' — 0 is
+        just 0, on either entity.
+
+        Same gate-aware reset as the other apply_* methods: on refusal
+        (stop switch on) the remembered last speed is cleared to 0, not
+        left at the value that was actually rejected — otherwise a later
+        direction flip could resume a toy that was never actually
+        commanded to spin in the first place."""
+        percent = _clamp(percent, 0, 100)
+        sign = 1.0 if self.get_rotation_direction(slug) else -1.0
+        ok = await self.async_apply_rotation(slug, percent * sign)
+        self._last_rotation_speed[slug] = percent if ok else 0.0
+        return ok
 
     async def async_apply_led(self, slug: str, percent: float) -> bool:
         """percent is 0-100 brightness. Same gate checks as
@@ -640,6 +726,7 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
             await self._cancel_pattern(t)
         for dev in self._devices():
             await bp.stop_device(dev)
+        self._last_rotation_speed.clear()
         self._notify_stop_listeners(None)
 
     def async_clear_stop(self) -> None:
@@ -659,6 +746,7 @@ class IntifaceCoordinator(DataUpdateCoordinator[dict[str, dict[str, Any]]]):
         dev = self.get_device(slug)
         if dev is not None:
             await bp.stop_device(dev)
+        self._last_rotation_speed[slug] = 0.0
         self._notify_stop_listeners(slug)
 
     def async_clear_device_stop(self, slug: str) -> None:

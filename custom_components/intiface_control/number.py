@@ -78,32 +78,41 @@ class IntifaceIntensityNumber(CoordinatorEntity[IntifaceCoordinator], NumberEnti
 
 
 class IntifaceRotationNumber(CoordinatorEntity[IntifaceCoordinator], NumberEntity):
-    """-100..100 signed rotation control — positive is clockwise, negative
-    counter-clockwise, 0 is stopped. Kept separate from the generic
-    Intensity slider (rather than folded in like vibrate/oscillate/etc)
-    because buttplug documents Rotate's value range as *signed*
-    specifically to represent direction, which a 0-100% unsigned slider
-    can't express — a device that can only spin one way would still work
-    fine here (the negative half of the range simply wouldn't do
-    anything useful for it), but a bidirectional one finally can be
-    driven both ways.
+    """0-100% unsigned rotation *speed* control — 0 is stopped, 100 is
+    full speed, direction is not this entity's concern. Kept separate
+    from the generic Intensity slider (rather than folded in like
+    vibrate/oscillate/etc) because Rotate needs a direction alongside its
+    speed, which the plain Intensity slider has no way to express.
+
+    Originally this was itself a signed -100..100 slider (matching how
+    buttplug documents Rotate's value range), but that made "stopped"
+    and "a specific direction at a specific speed" awkward to express on
+    one dial — 0 sits in the exact middle of a slider with no natural
+    resting notch there, so nudging it to exactly 0 was fiddly, and the
+    two directions weren't visually distinct at a glance. Direction now
+    lives on its own companion switch entity (see
+    IntifaceRotationDirectionSwitch in switch.py) instead; this slider
+    only ever carries the unsigned speed, and the coordinator combines
+    the two into the signed value Rotate actually expects — see
+    IntifaceCoordinator.async_apply_rotation_speed().
 
     Not exercised against real rotating hardware — only Intiface's
-    simulated rotator, whose own UI shows exactly this signed [-100, 100]
-    range for its Rotate feature."""
+    simulated rotator, whose own UI shows a signed [-100, 100] range for
+    its Rotate feature (this entity + its companion direction switch
+    together cover that same range, just split across two entities)."""
 
-    _attr_native_min_value = -100
+    _attr_native_min_value = 0
     _attr_native_max_value = 100
     _attr_native_step = 1
     _attr_mode = NumberMode.SLIDER
     _attr_has_entity_name = True
-    _attr_translation_key = "rotation"
+    _attr_translation_key = "rotation_speed"
     _attr_icon = "mdi:rotate-3d-variant"
 
     def __init__(self, coordinator: IntifaceCoordinator, entry_id: str, slug: str, name: str) -> None:
         super().__init__(coordinator)
         self._slug = slug
-        self._attr_unique_id = f"{entry_id}_{slug}_rotation"
+        self._attr_unique_id = f"{entry_id}_{slug}_rotation_speed"
         self._attr_device_info = _device_info(entry_id, slug, name)
         self._attr_native_value = 0.0
 
@@ -123,7 +132,7 @@ class IntifaceRotationNumber(CoordinatorEntity[IntifaceCoordinator], NumberEntit
         return super().available and self._slug in (self.coordinator.data or {})
 
     async def async_set_native_value(self, value: float) -> None:
-        ok = await self.coordinator.async_apply_rotation(self._slug, value)
+        ok = await self.coordinator.async_apply_rotation_speed(self._slug, value)
         self._attr_native_value = value if ok else 0.0
         self.async_write_ha_state()
 

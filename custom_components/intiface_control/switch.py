@@ -1,19 +1,27 @@
-"""Two kinds of switch: one global "Stop all toys" per config entry, plus
-one per-device "Enabled" switch for each connected toy.
+"""Three kinds of switch: one global "Stop all toys" per config entry,
+one per-device "Enabled" switch for each connected toy, and one
+per-device "Clockwise" direction switch for toys that support Rotate.
 
 The global switch is a one-way emergency stop: turning it ON immediately
 stops every toy and blocks all further commands until turned back OFF.
 
-The per-device switch is framed the other way round, as normal on/off
-availability rather than a stop button: ON (the default for a newly
-connected toy) means it responds normally; turning it OFF immediately
-stops that one toy and blocks commands to it — same gate mechanism as
-the global switch, just inverted so a toy defaults to usable the moment
-it connects rather than needing to be un-stopped first.
+The per-device Enabled switch is framed the other way round, as normal
+on/off availability rather than a stop button: ON (the default for a
+newly connected toy) means it responds normally; turning it OFF
+immediately stops that one toy and blocks commands to it — same gate
+mechanism as the global switch, just inverted so a toy defaults to
+usable the moment it connects rather than needing to be un-stopped
+first.
 
-The two gates are fully independent: disabling one toy doesn't affect
-the others or the global switch, and the global switch stopping
-everything doesn't change any individual toy's own Enabled state.
+The Enabled/global gates are fully independent: disabling one toy
+doesn't affect the others or the global switch, and the global switch
+stopping everything doesn't change any individual toy's own Enabled
+state.
+
+The Clockwise switch is unrelated to those two gates — it doesn't stop
+or block anything by itself, it's just the direction half of rotation
+control (see IntifaceRotationDirectionSwitch below and its companion
+0-100 speed number entity in number.py).
 """
 
 from __future__ import annotations
@@ -58,6 +66,54 @@ class IntifaceStopAllSwitch(CoordinatorEntity[IntifaceCoordinator], SwitchEntity
 
     async def async_turn_off(self, **kwargs) -> None:
         self.coordinator.async_clear_stop()
+        self.async_write_ha_state()
+
+
+class IntifaceRotationDirectionSwitch(CoordinatorEntity[IntifaceCoordinator], SwitchEntity):
+    """Per-device spin direction for rotating toys — ON means clockwise
+    (a positive signed value sent to Rotate), OFF means counter-
+    clockwise. Companion to the 0-100 Rotation speed number entity (see
+    IntifaceRotationNumber in number.py): together they cover the same
+    signed range Rotate expects, split across two entities specifically
+    so the speed slider never has to pass through zero to change
+    direction, or land exactly on zero to mean "stopped".
+
+    `is_on` is computed live from the coordinator's own stored
+    preference (get_rotation_direction()) rather than cached locally —
+    same reasoning as IntifaceEnableSwitch below: it can never drift out
+    of sync with what a later speed command would actually combine it
+    with. Flipping this while the toy is already spinning takes effect
+    immediately (see IntifaceCoordinator.async_set_rotation_direction()),
+    not just on the next touch of the speed slider."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "rotation_direction"
+    _attr_icon = "mdi:axis-z-rotate-clockwise"
+
+    def __init__(self, coordinator: IntifaceCoordinator, entry_id: str, slug: str, name: str) -> None:
+        super().__init__(coordinator)
+        self._slug = slug
+        self._attr_unique_id = f"{entry_id}_{slug}_rotation_direction"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, f"{entry_id}_{slug}")},
+            name=name,
+            manufacturer="Buttplug.io",
+        )
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._slug in (self.coordinator.data or {})
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.get_rotation_direction(self._slug)
+
+    async def async_turn_on(self, **kwargs) -> None:
+        await self.coordinator.async_set_rotation_direction(self._slug, True)
+        self.async_write_ha_state()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        await self.coordinator.async_set_rotation_direction(self._slug, False)
         self.async_write_ha_state()
 
 
@@ -110,7 +166,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             if slug in seen_slugs:
                 continue
             seen_slugs.add(slug)
-            entities.append(IntifaceEnableSwitch(coordinator, entry.entry_id, slug, getattr(dev, "name", slug)))
+            name = getattr(dev, "name", slug)
+            entities.append(IntifaceEnableSwitch(coordinator, entry.entry_id, slug, name))
+            if "rotate" in caps:
+                entities.append(IntifaceRotationDirectionSwitch(coordinator, entry.entry_id, slug, name))
         if entities:
             async_add_entities(entities)
 

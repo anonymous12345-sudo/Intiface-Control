@@ -38,7 +38,7 @@
   "entity": {
     "number": {
       "intensity": { "name": "Intensity" },
-      "rotation": { "name": "Rotation" },
+      "rotation_speed": { "name": "Rotation speed" },
       "position": { "name": "Position" },
       "position_duration": { "name": "Position duration" }
     },
@@ -55,7 +55,8 @@
     },
     "switch": {
       "stop_all": { "name": "Stop all toys" },
-      "enabled": { "name": "Enabled" }
+      "enabled": { "name": "Enabled" },
+      "rotation_direction": { "name": "Clockwise" }
     }
   },
   "services": {
