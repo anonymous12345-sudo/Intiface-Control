@@ -9,13 +9,14 @@ All notable changes to this project are documented here, per release.
 - **Rotation is now speed + direction instead of one signed slider.**
   `number.<toy>_rotation` (a -100..100 signed slider) is replaced by
   `number.<toy>_rotation_speed` (0-100, unsigned) plus a new companion
-  `switch.<toy>_rotation_direction` ("Clockwise" — on sends the speed
-  positive, off sends it negative). Landing exactly on 0 to mean
-  "stopped" was fiddly on a slider whose middle carried no natural
-  resting notch, and the two directions weren't visually distinct at a
-  glance; splitting them into a plain 0-100 dial plus a toggle fixes
-  both. Flipping the switch while a toy is already spinning re-sends
-  the current speed with the new sign immediately.
+  `switch.<toy>_clockwise` ("Clockwise" — on sends the speed positive,
+  off sends it negative). Landing exactly on 0 to mean "stopped" was
+  fiddly on a slider whose middle carried no natural resting notch,
+  and the two directions weren't visually distinct at a glance;
+  splitting them into a plain 0-100 dial plus a toggle fixes both.
+  Flipping the switch while a toy is already spinning re-sends the
+  current speed with the new sign before the toggle even finishes —
+  not just scheduled to happen soon.
 
   This changes the Rotation number entity's unique ID, so existing
   installs will see a new `number.<toy>_rotation_speed` entity appear

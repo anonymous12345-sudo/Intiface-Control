@@ -322,7 +322,7 @@ async def test_rotation_slider_end_to_end(hass, setup_entry, fake_device) -> Non
 
     assert hass.states.get("number.rotator_intensity") is None, "rotate must not create an Intensity entity"
     assert hass.states.get("number.rotator_rotation_speed") is not None
-    assert hass.states.get("switch.rotator_rotation_direction").state == "on", "clockwise is the default direction"
+    assert hass.states.get("switch.rotator_clockwise").state == "on", "clockwise is the default direction"
 
     await hass.services.async_call(
         "number", "set_value",
@@ -333,9 +333,9 @@ async def test_rotation_slider_end_to_end(hass, setup_entry, fake_device) -> Non
     assert dev.sent[-1] == (bp.ROTATE, (0.8,)), "clockwise (default) speed must be sent as a positive value"
 
     await hass.services.async_call(
-        "switch", "turn_off", {"entity_id": "switch.rotator_rotation_direction"}, blocking=True
+        "switch", "turn_off", {"entity_id": "switch.rotator_clockwise"}, blocking=True
     )
-    assert hass.states.get("switch.rotator_rotation_direction").state == "off"
+    assert hass.states.get("switch.rotator_clockwise").state == "off"
     assert dev.sent[-1] == (bp.ROTATE, (-0.8,)), (
         "flipping direction while already spinning must immediately re-send "
         "the same speed with the flipped sign, without touching the slider"
@@ -365,7 +365,7 @@ async def test_rotation_direction_flip_while_stopped_does_not_resume_spinning(ha
 
     # Never spun yet — flipping direction should send nothing at all.
     await hass.services.async_call(
-        "switch", "turn_off", {"entity_id": "switch.rotator_rotation_direction"}, blocking=True
+        "switch", "turn_off", {"entity_id": "switch.rotator_clockwise"}, blocking=True
     )
     assert dev.sent == []
 
@@ -384,7 +384,7 @@ async def test_rotation_direction_flip_while_stopped_does_not_resume_spinning(ha
     # Flipping direction post-stop must stay silent — the remembered
     # "last speed" was cleared by the stop, so there's nothing to resend.
     await hass.services.async_call(
-        "switch", "turn_on", {"entity_id": "switch.rotator_rotation_direction"}, blocking=True
+        "switch", "turn_on", {"entity_id": "switch.rotator_clockwise"}, blocking=True
     )
     assert dev.sent == []
 
